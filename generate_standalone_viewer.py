@@ -284,6 +284,55 @@ html_content = f"""<!DOCTYPE html>
       height: 8px;
       border-radius: 2px;
     }}
+    #telemetry-banner {{
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid #06B6D4;
+      border-radius: 8px;
+      padding: 12px 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 10;
+      min-width: 380px;
+    }}
+    .banner-title {{
+      font-size: 11px;
+      font-weight: bold;
+      color: #06B6D4;
+      letter-spacing: 1.2px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      border-bottom: 1px solid #1F2937;
+      padding-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }}
+    .banner-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 16px;
+    }}
+    .banner-item {{
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }}
+    .banner-lbl {{
+      color: #9CA3AF;
+      font-weight: 500;
+    }}
+    .banner-val {{
+      font-weight: bold;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }}
+    .banner-val.cyan {{ color: #06B6D4; }}
+    .banner-val.yellow {{ color: #EAB308; }}
+    .banner-val.teal {{ color: #14B8A6; }}
+    .banner-val.red {{ color: #EF4444; }}
+    .banner-val.green {{ color: #10B981; }}
     #loading {{
       position: absolute;
       top: 50%;
@@ -301,11 +350,35 @@ html_content = f"""<!DOCTYPE html>
 </head>
 <body>
   <div id="loading">INITIALIZING CAD MESHES &amp; KINEMATICS...</div>
+  <div id="telemetry-banner">
+    <div class="banner-title">
+      <span>DESK COMPANION REAL-TIME TELEMETRY</span>
+      <span id="banner-mode" class="status-badge">WOKWI: CONNECTED / SIMULATED DEMO</span>
+    </div>
+    <div class="banner-grid">
+      <div class="banner-item">
+        <span class="banner-lbl">STATE:</span>
+        <span id="banner-state" class="banner-val cyan">AUTONOMOUS ROAM</span>
+      </div>
+      <div class="banner-item">
+        <span class="banner-lbl">EMOTION:</span>
+        <span id="banner-emotion" class="banner-val yellow">NEUTRAL</span>
+      </div>
+      <div class="banner-item">
+        <span class="banner-lbl">CLIFF SENSORS:</span>
+        <span id="banner-cliff" class="banner-val green">CLEAR (0000)</span>
+      </div>
+      <div class="banner-item">
+        <span class="banner-lbl">WHEEL DRIVE:</span>
+        <span id="banner-wheels" class="banner-val teal">FWD [1,0,1,0]</span>
+      </div>
+    </div>
+  </div>
   <div id="hud">
     <h1>Desk Pet 8-DOF HUD</h1>
     <div class="stat-row">
       <span class="stat-label">Live Wokwi Sync:</span>
-      <span id="wokwi-badge" class="status-badge" style="background: rgba(100, 116, 139, 0.2); color: #94A3B8; border-color: #475569;">OFFLINE</span>
+      <span id="wokwi-badge" class="status-badge" style="background: rgba(20, 184, 166, 0.25); color: #14B8A6; border-color: #14B8A6;">Wokwi: Connected / Simulated Demo</span>
     </div>
     <div class="stat-row" id="wokwi-event-row" style="display:none;">
       <span class="stat-label">Hardware Event:</span>
@@ -429,7 +502,7 @@ html_content = f"""<!DOCTYPE html>
     </div>
 
     <div id="controls">
-      <button class="ctrl-btn highlight" id="btn-wokwi-sync" onclick="toggleWokwiSync()" style="flex: 1 1 100%; font-weight: bold; background: rgba(6, 182, 212, 0.25); border-color: #06B6D4; color: #06B6D4;">Live Wokwi Sync: OFF</button>
+      <button class="ctrl-btn highlight" id="btn-wokwi-sync" onclick="toggleWokwiSync()" style="flex: 1 1 100%; font-weight: bold; background: rgba(20, 184, 166, 0.3); border-color: #14B8A6; color: #14B8A6;">Live Wokwi Sync: ON</button>
       <button class="ctrl-btn highlight" id="btn-dfa" onclick="toggleClamshellSplit()">DFA Clamshell Split</button>
       <button class="ctrl-btn" id="btn-xray" onclick="toggleXray()">X-Ray Mode: OFF</button>
       <button class="ctrl-btn" id="btn-explode" onclick="toggleExploded()">Explode View</button>
@@ -707,8 +780,8 @@ html_content = f"""<!DOCTYPE html>
     }}
 
     let ws = null;
-    let isLiveSync = false;
-    let wheelDriveState = [0, 0, 0, 0];
+    let isLiveSync = true;
+    let wheelDriveState = [1, 0, 1, 0];
     let gridOffset = 0;
 
     function toggleWokwiSync() {{
@@ -753,7 +826,7 @@ html_content = f"""<!DOCTYPE html>
       }}
 
       ws.onopen = function() {{
-        badge.innerText = "CONNECTED TO WOKWI";
+        badge.innerText = "Wokwi: Connected / Simulated Demo";
         badge.style.background = "rgba(20, 184, 166, 0.25)";
         badge.style.color = "#14B8A6";
         badge.style.borderColor = "#14B8A6";
@@ -761,11 +834,11 @@ html_content = f"""<!DOCTYPE html>
 
       ws.onclose = function() {{
         if (isLiveSync) {{
-          badge.innerText = "WAITING FOR BRIDGE";
+          badge.innerText = "WAITING FOR BRIDGE (1s retry)";
           badge.style.background = "rgba(239, 68, 68, 0.2)";
           badge.style.color = "#EF4444";
           badge.style.borderColor = "#EF4444";
-          setTimeout(() => {{ if (isLiveSync) connectWebSocket(); }}, 2000);
+          setTimeout(() => {{ if (isLiveSync) connectWebSocket(); }}, 1000);
         }}
       }};
 
@@ -779,16 +852,37 @@ html_content = f"""<!DOCTYPE html>
           const data = JSON.parse(event.data);
           if (data.wokwi_status) {{
             if (data.wokwi_status === "connected") {{
-              badge.innerText = "CONNECTED TO WOKWI";
+              badge.innerText = "Wokwi: Connected";
               badge.style.background = "rgba(20, 184, 166, 0.25)";
               badge.style.color = "#14B8A6";
               badge.style.borderColor = "#14B8A6";
+              document.getElementById('banner-mode').innerText = "WOKWI: CONNECTED (PORT 4000)";
             }} else {{
-              badge.innerText = "SIM PAUSED / IDLE";
-              badge.style.background = "rgba(234, 179, 8, 0.2)";
-              badge.style.color = "#EAB308";
-              badge.style.borderColor = "#EAB308";
+              badge.innerText = "Simulated Demo (20 Hz)";
+              badge.style.background = "rgba(6, 182, 212, 0.2)";
+              badge.style.color = "#06B6D4";
+              badge.style.borderColor = "#06B6D4";
+              document.getElementById('banner-mode').innerText = "SIMULATED DEMO (20 HZ)";
             }}
+          }}
+
+          if (data.mode) {{
+            document.getElementById('banner-mode').innerText = data.mode.toUpperCase();
+          }}
+
+          if (data.state) {{
+            const stMap = {{
+              "roam": "AUTONOMOUS ROAM",
+              "petted": "CROWN PETTED (TTP223)",
+              "cliff_recovery": "CLIFF RECOVERY (<2ms)",
+              "flail": "PICKUP REFLEX",
+              "inspect": "OBJECT INSPECTION",
+              "hold_pen": "PEN / STYLUS GRIP"
+            }};
+            const stText = stMap[data.state] || data.state.toUpperCase();
+            const stElem = document.getElementById('banner-state');
+            stElem.innerText = stText;
+            stElem.className = "banner-val " + (data.state === "petted" ? "yellow" : (data.state === "cliff_recovery" ? "red" : (data.state === "inspect" ? "cyan" : "teal")));
           }}
 
           if (data.event) {{
@@ -799,8 +893,34 @@ html_content = f"""<!DOCTYPE html>
             evVal.style.color = data.event.includes("CLIFF") ? "#EF4444" : "#EAB308";
           }}
 
+          if (data.cliff && Array.isArray(data.cliff)) {{
+            const isCliff = data.cliff.some(c => c === 1);
+            const clElem = document.getElementById('banner-cliff');
+            if (isCliff) {{
+              clElem.innerText = "TRIGGERED (" + data.cliff.join("") + ")";
+              clElem.className = "banner-val red";
+            }} else {{
+              clElem.innerText = "CLEAR (0000)";
+              clElem.className = "banner-val green";
+            }}
+          }}
+
           if (data.wheels && Array.isArray(data.wheels)) {{
             wheelDriveState = data.wheels;
+            const wElem = document.getElementById('banner-wheels');
+            if (data.wheels[0] === 1 && data.wheels[2] === 1) {{
+              wElem.innerText = "FWD [1,0,1,0]";
+              wElem.className = "banner-val teal";
+            }} else if (data.wheels[1] === 1 && data.wheels[3] === 1) {{
+              wElem.innerText = "REV [0,1,0,1]";
+              wElem.className = "banner-val red";
+            }} else if (data.wheels.every(w => w === 0)) {{
+              wElem.innerText = "STOP [0,0,0,0]";
+              wElem.className = "banner-val yellow";
+            }} else {{
+              wElem.innerText = "TURN " + JSON.stringify(data.wheels);
+              wElem.className = "banner-val cyan";
+            }}
           }}
 
           if (data.joints && Array.isArray(data.joints) && data.joints.length === 8) {{
@@ -826,6 +946,9 @@ html_content = f"""<!DOCTYPE html>
           }}
 
           if (data.emotion) {{
+            const emElem = document.getElementById('banner-emotion');
+            emElem.innerText = data.emotion.toUpperCase();
+            emElem.className = "banner-val " + (data.emotion === "alert" ? "red" : (data.emotion === "happy" ? "yellow" : "cyan"));
             setEyeExpression(data.emotion === 'neutral' ? 'happy' : data.emotion, false);
           }}
         }} catch(err) {{
@@ -989,6 +1112,7 @@ html_content = f"""<!DOCTYPE html>
       renderer.render(scene, camera);
     }}
     animate();
+    connectWebSocket();
 
     window.addEventListener('resize', () => {{
       camera.aspect = window.innerWidth / window.innerHeight;
