@@ -1,0 +1,274 @@
+[
+  {
+    "part_name": "torso_front",
+    "build_orientation_desc": "Split-face down on bed (Y=0 -> Bed Z=0)",
+    "bed_dimensions_xyz_mm": [
+      97.0,
+      96.0,
+      43.8
+    ],
+    "part_volume_cm3": 26.89,
+    "bed_contact_area_cm2": 1.02,
+    "overhang_area_gt_45deg_cm2": 37.89,
+    "overhang_area_ratio_pct": 15.5,
+    "support_volume_cm3": 45.09,
+    "support_to_part_ratio_pct": 167.7,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "torso_front_print_ready.stl"
+  },
+  {
+    "part_name": "torso_rear",
+    "build_orientation_desc": "Split-face down on bed (Y=0 -> Bed Z=0)",
+    "bed_dimensions_xyz_mm": [
+      97.0,
+      105.0,
+      46.0
+    ],
+    "part_volume_cm3": 35.03,
+    "bed_contact_area_cm2": 4.39,
+    "overhang_area_gt_45deg_cm2": 38.75,
+    "overhang_area_ratio_pct": 14.2,
+    "support_volume_cm3": 47.51,
+    "support_to_part_ratio_pct": 135.6,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "torso_rear_print_ready.stl"
+  },
+  {
+    "part_name": "head_front",
+    "build_orientation_desc": "Split-face down on bed (Y=4 -> Bed Z=0)",
+    "bed_dimensions_xyz_mm": [
+      71.6,
+      40.8,
+      33.2
+    ],
+    "part_volume_cm3": 12.36,
+    "bed_contact_area_cm2": 1.19,
+    "overhang_area_gt_45deg_cm2": 12.46,
+    "overhang_area_ratio_pct": 10.9,
+    "support_volume_cm3": 8.33,
+    "support_to_part_ratio_pct": 67.4,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "head_front_print_ready.stl"
+  },
+  {
+    "part_name": "head_rear",
+    "build_orientation_desc": "Split-face down on bed (Y=4 -> Bed Z=0)",
+    "bed_dimensions_xyz_mm": [
+      71.6,
+      40.4,
+      36.0
+    ],
+    "part_volume_cm3": 1.0,
+    "bed_contact_area_cm2": 1.0,
+    "overhang_area_gt_45deg_cm2": 8.97,
+    "overhang_area_ratio_pct": 8.2,
+    "support_volume_cm3": 4.6,
+    "support_to_part_ratio_pct": 460.2,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "head_rear_print_ready.stl"
+  },
+  {
+    "part_name": "base_link",
+    "build_orientation_desc": "Bottom deck down on bed (Z=0 -> Bed Z=0)",
+    "bed_dimensions_xyz_mm": [
+      109.0,
+      115.0,
+      34.0
+    ],
+    "part_volume_cm3": 1.0,
+    "bed_contact_area_cm2": 0.63,
+    "overhang_area_gt_45deg_cm2": 202.73,
+    "overhang_area_ratio_pct": 28.6,
+    "support_volume_cm3": 337.9,
+    "support_to_part_ratio_pct": 33790.4,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "base_link_print_ready.stl"
+  },
+  {
+    "part_name": "left_wheel",
+    "build_orientation_desc": "Outer hub face flat on bed",
+    "bed_dimensions_xyz_mm": [
+      34.0,
+      34.0,
+      12.0
+    ],
+    "part_volume_cm3": 1.0,
+    "bed_contact_area_cm2": 9.02,
+    "overhang_area_gt_45deg_cm2": 0.0,
+    "overhang_area_ratio_pct": 0.0,
+    "support_volume_cm3": 0.0,
+    "support_to_part_ratio_pct": 0.0,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "left_wheel_print_ready.stl"
+  },
+  {
+    "part_name": "right_wheel",
+    "build_orientation_desc": "Outer hub face flat on bed",
+    "bed_dimensions_xyz_mm": [
+      34.0,
+      34.0,
+      12.0
+    ],
+    "part_volume_cm3": 1.0,
+    "bed_contact_area_cm2": 9.02,
+    "overhang_area_gt_45deg_cm2": 0.0,
+    "overhang_area_ratio_pct": 0.0,
+    "support_volume_cm3": 0.0,
+    "support_to_part_ratio_pct": 0.0,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "right_wheel_print_ready.stl"
+  },
+  {
+    "part_name": "neck_yaw_turret",
+    "build_orientation_desc": "Bottom bearing boss flat on bed",
+    "bed_dimensions_xyz_mm": [
+      26.0,
+      26.0,
+      16.0
+    ],
+    "part_volume_cm3": 4.94,
+    "bed_contact_area_cm2": 1.95,
+    "overhang_area_gt_45deg_cm2": 2.87,
+    "overhang_area_ratio_pct": 10.2,
+    "support_volume_cm3": 1.65,
+    "support_to_part_ratio_pct": 33.5,
+    "printability_rating": "GOOD (Standard Tree Supports)",
+    "print_ready_file": "neck_yaw_turret_print_ready.stl"
+  },
+  {
+    "part_name": "left_arm",
+    "build_orientation_desc": "Lateral flat flank on bed",
+    "bed_dimensions_xyz_mm": [
+      33.8,
+      9.6,
+      8.0
+    ],
+    "part_volume_cm3": 1.8,
+    "bed_contact_area_cm2": 1.39,
+    "overhang_area_gt_45deg_cm2": 1.09,
+    "overhang_area_ratio_pct": 10.1,
+    "support_volume_cm3": 0.11,
+    "support_to_part_ratio_pct": 6.2,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "left_arm_print_ready.stl"
+  },
+  {
+    "part_name": "right_arm",
+    "build_orientation_desc": "Lateral flat flank on bed",
+    "bed_dimensions_xyz_mm": [
+      33.8,
+      9.6,
+      8.0
+    ],
+    "part_volume_cm3": 1.8,
+    "bed_contact_area_cm2": 1.37,
+    "overhang_area_gt_45deg_cm2": 1.11,
+    "overhang_area_ratio_pct": 10.3,
+    "support_volume_cm3": 0.11,
+    "support_to_part_ratio_pct": 6.3,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "right_arm_print_ready.stl"
+  },
+  {
+    "part_name": "left_pincer",
+    "build_orientation_desc": "Lateral hinge flat face on bed",
+    "bed_dimensions_xyz_mm": [
+      20.0,
+      11.0,
+      4.5
+    ],
+    "part_volume_cm3": 0.37,
+    "bed_contact_area_cm2": 0.68,
+    "overhang_area_gt_45deg_cm2": 0.3,
+    "overhang_area_ratio_pct": 6.0,
+    "support_volume_cm3": 0.04,
+    "support_to_part_ratio_pct": 11.5,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "left_pincer_print_ready.stl"
+  },
+  {
+    "part_name": "right_pincer",
+    "build_orientation_desc": "Lateral hinge flat face on bed",
+    "bed_dimensions_xyz_mm": [
+      20.0,
+      11.0,
+      4.5
+    ],
+    "part_volume_cm3": 0.37,
+    "bed_contact_area_cm2": 0.68,
+    "overhang_area_gt_45deg_cm2": 0.3,
+    "overhang_area_ratio_pct": 6.0,
+    "support_volume_cm3": 0.04,
+    "support_to_part_ratio_pct": 11.5,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "right_pincer_print_ready.stl"
+  },
+  {
+    "part_name": "left_ear",
+    "build_orientation_desc": "Cylindrical hinge pivot flat on bed",
+    "bed_dimensions_xyz_mm": [
+      45.5,
+      15.0,
+      3.5
+    ],
+    "part_volume_cm3": 0.79,
+    "bed_contact_area_cm2": 3.37,
+    "overhang_area_gt_45deg_cm2": 3.69,
+    "overhang_area_ratio_pct": 22.8,
+    "support_volume_cm3": 0.68,
+    "support_to_part_ratio_pct": 85.4,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "left_ear_print_ready.stl"
+  },
+  {
+    "part_name": "right_ear",
+    "build_orientation_desc": "Cylindrical hinge pivot flat on bed",
+    "bed_dimensions_xyz_mm": [
+      45.5,
+      15.0,
+      3.5
+    ],
+    "part_volume_cm3": 0.79,
+    "bed_contact_area_cm2": 3.36,
+    "overhang_area_gt_45deg_cm2": 3.7,
+    "overhang_area_ratio_pct": 22.9,
+    "support_volume_cm3": 0.68,
+    "support_to_part_ratio_pct": 85.5,
+    "printability_rating": "ACCEPTABLE (Organic Supports Recommended)",
+    "print_ready_file": "right_ear_print_ready.stl"
+  },
+  {
+    "part_name": "left_eye",
+    "build_orientation_desc": "Flat back mounting surface on bed",
+    "bed_dimensions_xyz_mm": [
+      11.0,
+      1.8,
+      9.0
+    ],
+    "part_volume_cm3": 0.13,
+    "bed_contact_area_cm2": 0.06,
+    "overhang_area_gt_45deg_cm2": 0.08,
+    "overhang_area_ratio_pct": 3.5,
+    "support_volume_cm3": 0.02,
+    "support_to_part_ratio_pct": 15.0,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "left_eye_print_ready.stl"
+  },
+  {
+    "part_name": "right_eye",
+    "build_orientation_desc": "Flat back mounting surface on bed",
+    "bed_dimensions_xyz_mm": [
+      11.0,
+      1.8,
+      9.0
+    ],
+    "part_volume_cm3": 0.13,
+    "bed_contact_area_cm2": 0.06,
+    "overhang_area_gt_45deg_cm2": 0.08,
+    "overhang_area_ratio_pct": 3.5,
+    "support_volume_cm3": 0.02,
+    "support_to_part_ratio_pct": 15.0,
+    "printability_rating": "EXCELLENT (Minimal / Bridging Only)",
+    "print_ready_file": "right_eye_print_ready.stl"
+  }
+]
