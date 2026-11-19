@@ -36,7 +36,7 @@ class StudyDeskArenaEnv(gym.Env):
 
         self.renderer: Optional[mujoco.Renderer] = None
         if self.render_mode == "rgb_array":
-            self.renderer = mujoco.Renderer(self.model, width=1280, height=720)
+            self.renderer = mujoco.Renderer(self.model, height=720, width=1280)
 
         # Action: 10 actuators
         # [wheel_l, wheel_r, neck_yaw, neck_pitch, left_shoulder, right_shoulder, left_pincer, right_pincer, left_ear, right_ear]
