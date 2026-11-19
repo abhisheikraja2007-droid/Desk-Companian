@@ -289,27 +289,37 @@ class StudyDeskArenaEnv(gym.Env):
             self.mistake_buffer.record_mistake("CLIFF_TRIGGER", obs, action, penalty=100.0, priority=2.0)
             return reward, terminated, False, info
 
-        # Tilt / Roll-over failure guard (> 50 deg tilt)
+        # Tilt / Roll-over failure guard (> 45 deg tilt)
         qw = float(self.data.qpos[10])
         qz = float(self.data.qpos[13])
         qx = float(self.data.qpos[11])
         qy = float(self.data.qpos[12])
         upright = 1.0 - 2.0 * (qx * qx + qy * qy)
-        if upright < 0.40 or rz < 0.008:
+        if upright < 0.65 or rz < 0.008:
             reward -= 80.0
             terminated = True
             info["mistake"] = "TILT_OVERTURN"
             return reward, terminated, False, info
 
-        # 2. Semantic Hazard Keep-Out: 12 cm buffer around Hot Coffee Mug
-        if dist_to_mug < 0.12:
-            penetration = (0.12 - dist_to_mug)
+        # Continuous upright-orientation reward and roll/pitch angular velocity damping
+        reward += 0.5 * float(upright)
+        wx = float(self.data.qvel[9])
+        wy = float(self.data.qvel[10])
+        reward -= 0.2 * (wx * wx + wy * wy)
+
+        # Lateral wheel-turn smoothing
+        wheel_diff = abs(float(action[0]) - float(action[1]))
+        reward -= 0.01 * wheel_diff
+
+        # 2. Semantic Hazard Keep-Out: 14 cm buffer around Hot Coffee Mug
+        if dist_to_mug < 0.14:
+            penetration = (0.14 - dist_to_mug)
             penalty = 25.0 + 80.0 * penetration
             reward -= penalty
             info["mistake"] = "MUG_PROXIMITY_VIOLATION"
             self.mistake_buffer.record_mistake("MUG_PROXIMITY_VIOLATION", obs, action, penalty=penalty, priority=1.5)
         else:
-            reward += 0.05  # Safe distance bonus
+            reward += 0.08  # Safe distance bonus
 
         # 3. Surface Friction Traction (Wood vs Cloth vs Paper)
         # Paper sheet is at X in [0.115, 0.325], Y in [-0.048, 0.248]
