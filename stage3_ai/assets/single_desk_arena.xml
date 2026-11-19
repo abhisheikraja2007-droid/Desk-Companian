@@ -1,0 +1,270 @@
+<mujoco model="study_desk_arena">
+  <compiler angle="radian" meshdir="stl" balanceinertia="true"/>
+  <option timestep="0.002" gravity="0 0 -9.81" iterations="60" solver="Newton" cone="elliptic"/>
+
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2"/>
+    <rgba haze="0.05 0.07 0.10 1"/>
+    <quality shadowsize="2048"/>
+  </visual>
+
+  <asset>
+    <!-- Dark High-Tech Aesthetic Palette (#0B0F17, #14B8A6, #06B6D4, #EAB308) -->
+    <texture type="skybox" builtin="gradient" rgb1="0.04 0.06 0.09" rgb2="0.01 0.02 0.03" width="512" height="512"/>
+    <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.06 0.08 0.12" rgb2="0.04 0.05 0.08" width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tex" texrepeat="10 10" roughness="0.8"/>
+
+    <material name="wood_desk" rgba="0.22 0.18 0.14 1.0" roughness="0.5" specular="0.2"/>
+    <material name="desk_legs" rgba="0.10 0.12 0.15 1.0" roughness="0.4" specular="0.3"/>
+    <material name="cloth_mat" rgba="0.10 0.15 0.20 1.0" roughness="0.9" specular="0.05"/>
+    <material name="paper_mat" rgba="0.92 0.94 0.96 1.0" roughness="0.3" specular="0.1"/>
+    <material name="hazard_zone" rgba="0.95 0.25 0.15 0.25"/>
+    <material name="ceramic_mug" rgba="0.88 0.20 0.15 1.0" roughness="0.3" specular="0.5"/>
+    <material name="coffee_liquid" rgba="0.18 0.08 0.04 1.0" roughness="0.1" specular="0.9"/>
+    <material name="water_bottle" rgba="0.10 0.60 0.90 0.6" roughness="0.1" specular="0.9"/>
+    <material name="laptop_body" rgba="0.25 0.28 0.32 1.0" roughness="0.3" specular="0.6"/>
+    <material name="laptop_screen" rgba="0.02 0.70 0.85 0.9" emission="0.7"/>
+    <material name="stylus_tpu" rgba="0.92 0.70 0.05 1.0" roughness="0.5" specular="0.4"/>
+    <material name="dock_nest" rgba="0.08 0.72 0.65 0.8" emission="0.4"/>
+    <material name="dock_border" rgba="0.92 0.70 0.03 1.0" emission="0.6"/>
+
+    <!-- Include Robot Materials & Meshes -->
+    <material name="dark_chassis" rgba="0.043 0.059 0.090 1.0" roughness="0.6" specular="0.2"/>
+    <material name="cyan_accent" rgba="0.024 0.714 0.831 1.0" roughness="0.3" specular="0.5"/>
+    <material name="teal_body" rgba="0.078 0.722 0.651 1.0" roughness="0.4" specular="0.4"/>
+    <material name="yellow_amber" rgba="0.918 0.702 0.031 1.0" roughness="0.3" specular="0.6"/>
+    <material name="tire_rubber" rgba="0.12 0.12 0.14 1.0" roughness="0.8" specular="0.1"/>
+    <material name="eye_glow" rgba="0.05 0.95 0.95 1.0" emission="0.9"/>
+    <material name="gold_pad" rgba="0.85 0.65 0.12 1.0" roughness="0.2" specular="0.8"/>
+
+    <mesh name="base_mesh" file="base_link.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_wheel_mesh" file="left_wheel.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_wheel_mesh" file="right_wheel.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="torso_mesh" file="torso_shell.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_arm_mesh" file="left_arm.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_pincer_mesh" file="left_pincer.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_arm_mesh" file="right_arm.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_pincer_mesh" file="right_pincer.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="neck_turret_mesh" file="neck_yaw_turret.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="head_mesh" file="head_assembly.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_ear_mesh" file="left_ear.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_ear_mesh" file="right_ear.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_eye_mesh" file="left_eye.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_eye_mesh" file="right_eye.stl" scale="0.001 0.001 0.001"/>
+  </asset>
+
+  <worldbody>
+    <!-- Ambient Room Lighting -->
+    <light directional="true" pos="0 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2"/>
+    <light pos="0.5 0.5 1.8" dir="-0.3 -0.3 -0.8" diffuse="0.06 0.85 0.95" specular="0.5 0.5 0.5" cutoff="60"/>
+    <light pos="-0.5 -0.5 1.8" dir="0.3 0.3 -0.8" diffuse="0.95 0.70 0.05" specular="0.4 0.4 0.4" cutoff="60"/>
+
+    <!-- Room Floor (0.72 m below desk) -->
+    <geom name="room_floor" type="plane" size="10 10 0.1" pos="0 0 -0.72" material="floor_mat"/>
+
+    <!-- Study Desk Top (1.2m x 0.6m x 0.03m, centered at Z=0) -->
+    <!-- Default surface: Wood friction mu = 0.45 -->
+    <body name="desk" pos="0 0 0">
+      <geom name="desk_top" type="box" size="0.60 0.30 0.015" pos="0 0 -0.015" material="wood_desk" friction="0.45 0.005 0.0001"/>
+
+      <!-- 4 Steel Desk Legs -->
+      <geom name="leg_fl" type="cylinder" size="0.02 0.36" pos="-0.57  0.27 -0.36" material="desk_legs"/>
+      <geom name="leg_fr" type="cylinder" size="0.02 0.36" pos=" 0.57  0.27 -0.36" material="desk_legs"/>
+      <geom name="leg_rl" type="cylinder" size="0.02 0.36" pos="-0.57 -0.27 -0.36" material="desk_legs"/>
+      <geom name="leg_rr" type="cylinder" size="0.02 0.36" pos=" 0.57 -0.27 -0.36" material="desk_legs"/>
+
+      <!-- Friction Patch 1: Cloth Desk Mat (0.60m x 0.30m, high traction mu = 0.85) -->
+      <geom name="mat_cloth" type="box" size="0.25 0.18 0.001" pos="-0.15 -0.04 0.001" material="cloth_mat" friction="0.85 0.01 0.001"/>
+
+      <!-- Friction Patch 2: Slick Loose Paper Sheet (A4 size, slick mu = 0.25) -->
+      <geom name="mat_paper" type="box" size="0.105 0.148 0.0005" pos="0.22 0.10 0.0015" material="paper_mat" friction="0.25 0.002 0.0001"/>
+
+      <!-- Corner Sleep-Nest Docking Pad (target at X=-0.48, Y=-0.20) -->
+      <geom name="dock_pad" type="box" size="0.08 0.08 0.002" pos="-0.48 -0.20 0.002" material="dock_nest"/>
+      <geom name="dock_border_geom" type="box" size="0.085 0.085 0.001" pos="-0.48 -0.20 0.001" material="dock_border"/>
+      <site name="dock_target" pos="-0.48 -0.20 0.010" size="0.010" rgba="0.1 0.9 0.7 0.8"/>
+
+      <!-- Semantic Obstacle 1: Hot Coffee Mug (12 cm hazard keep-out buffer) -->
+      <body name="coffee_mug" pos="-0.35 0.15 0">
+        <geom name="mug_body" type="cylinder" size="0.042 0.048" pos="0 0 0.048" material="ceramic_mug" mass="0.32" friction="0.5 0.01 0.001"/>
+        <geom name="mug_coffee" type="cylinder" size="0.038 0.005" pos="0 0 0.085" material="coffee_liquid"/>
+        <geom name="mug_handle" type="box" size="0.010 0.015 0.028" pos="-0.048 0 0.048" material="ceramic_mug"/>
+        <!-- 12 cm Visual Hazard Keep-Out Ring -->
+        <geom name="mug_hazard_zone" type="cylinder" size="0.12 0.0005" pos="0 0 0.001" material="hazard_zone" contype="0" conaffinity="0"/>
+        <site name="mug_center" pos="0 0 0.05" size="0.008" rgba="1 0.2 0.1 0.6"/>
+      </body>
+
+      <!-- Semantic Obstacle 2: Water Bottle -->
+      <body name="water_bottle" pos="-0.46 0.02 0">
+        <geom name="bottle_body" type="cylinder" size="0.035 0.10" pos="0 0 0.10" material="water_bottle" mass="0.45" friction="0.4 0.01 0.001"/>
+        <geom name="bottle_cap" type="cylinder" size="0.018 0.015" pos="0 0 0.21" rgba="0.9 0.9 0.9 1"/>
+        <site name="bottle_center" pos="0 0 0.10" size="0.008" rgba="0.2 0.6 1 0.6"/>
+      </body>
+
+      <!-- Semantic Obstacle 3: Laptop & Screen (Side Parking Target) -->
+      <body name="laptop" pos="0.36 -0.05 0">
+        <geom name="laptop_base" type="box" size="0.15 0.11 0.006" pos="0 0 0.006" material="laptop_body" mass="1.3"/>
+        <geom name="laptop_display" type="box" size="0.15 0.005 0.095" pos="0 -0.10 0.095" material="laptop_body"/>
+        <geom name="screen_active" type="box" size="0.14 0.001 0.085" pos="0 -0.094 0.095" material="laptop_screen"/>
+        <!-- Flow-State Sentinel Parking Target beside laptop -->
+        <site name="laptop_sentinel_dock" pos="-0.22 0 0.02" size="0.015" rgba="0.06 0.85 0.95 0.5"/>
+      </body>
+    </body>
+
+    <!-- Graspable Task Object: Stylus / Pen (Ø 9 mm, 14 cm length) -->
+    <body name="stylus_pen" pos="0.00 0.06 0.006">
+      <freejoint name="stylus_joint"/>
+      <inertial pos="0 0 0" mass="0.014" diaginertia="2.5e-6 2.5e-6 2.5e-7"/>
+      <geom name="stylus_shaft" type="capsule" size="0.0045 0.060" euler="0 1.5708 0" material="stylus_tpu" mass="0.014" friction="1.2 0.02 0.005"/>
+      <geom name="stylus_nib" type="sphere" size="0.0045" pos="0.065 0 0" rgba="0.1 0.1 0.1 1"/>
+      <site name="stylus_grip_site" pos="0 0 0" size="0.006" rgba="1 0.8 0 0.7"/>
+    </body>
+
+    <!-- Desk Companion Robot (Initial Spawn on Desk) -->
+    <body name="desk_pet" pos="0.0 -0.15 0.017">
+      <freejoint name="root"/>
+
+      <body name="base_link">
+        <inertial pos="0 -0.000021 0.010275" mass="0.3761" diaginertia="1.567e-4 1.567e-4 1.567e-4"/>
+        <geom name="base_visual" type="mesh" mesh="base_mesh" material="dark_chassis" contype="0" conaffinity="0"/>
+        <geom name="base_collision" type="mesh" mesh="base_mesh" material="dark_chassis"/>
+        <geom name="front_caster" type="sphere" size="0.007" pos="0 0.040 -0.010" friction="0.02 0.005 0.001" rgba="0.3 0.3 0.35 1"/>
+        <geom name="rear_caster" type="sphere" size="0.007" pos="0 -0.040 -0.010" friction="0.02 0.005 0.001" rgba="0.3 0.3 0.35 1"/>
+
+        <!-- Downward Cliff Rangefinders -->
+        <site name="cliff_fl" pos="-0.035 0.040 0.005" zaxis="0 0 -1" size="0.002" rgba="1 0 0 1"/>
+        <site name="cliff_fr" pos="0.035 0.040 0.005" zaxis="0 0 -1" size="0.002" rgba="1 0 0 1"/>
+        <site name="cliff_rl" pos="-0.035 -0.040 0.005" zaxis="0 0 -1" size="0.002" rgba="1 0 0 1"/>
+        <site name="cliff_rr" pos="0.035 -0.040 0.005" zaxis="0 0 -1" size="0.002" rgba="1 0 0 1"/>
+
+        <!-- IMU Site -->
+        <site name="imu_site" pos="0 0.002 0.050" size="0.004" rgba="0 1 1 1"/>
+
+        <!-- Left Drive Wheel -->
+        <body name="left_wheel" pos="-0.049 0 0">
+          <inertial pos="0 0 0" mass="0.0194" diaginertia="8.092e-6 8.092e-6 8.092e-6"/>
+          <joint name="left_wheel_joint" type="hinge" axis="-1 0 0" damping="0.001"/>
+          <geom name="left_wheel_geom" type="mesh" mesh="left_wheel_mesh" material="tire_rubber" friction="1.2 0.02 0.002"/>
+        </body>
+
+        <!-- Right Drive Wheel -->
+        <body name="right_wheel" pos="0.049 0 0">
+          <inertial pos="0 0 0" mass="0.0194" diaginertia="8.092e-6 8.092e-6 8.092e-6"/>
+          <joint name="right_wheel_joint" type="hinge" axis="1 0 0" damping="0.001"/>
+          <geom name="right_wheel_geom" type="mesh" mesh="right_wheel_mesh" material="tire_rubber" friction="1.2 0.02 0.002"/>
+        </body>
+
+        <!-- Torso -->
+        <body name="torso" pos="0 0 0.034">
+          <inertial pos="-0.000002 -0.003657 0.057928" mass="0.1409" diaginertia="1.588e-4 1.485e-4 1.614e-4"/>
+          <geom name="torso_visual" type="mesh" mesh="torso_mesh" material="teal_body" contype="0" conaffinity="0"/>
+          <geom name="torso_collision" type="mesh" mesh="torso_mesh" material="teal_body"/>
+
+          <!-- Left Arm & Pincer -->
+          <body name="left_arm" pos="-0.0485 0.002 0.044">
+            <inertial pos="0 0 -0.012585" mass="0.0152" diaginertia="1.396e-6 1.365e-6 1.477e-7"/>
+            <joint name="left_shoulder_joint" type="hinge" axis="1 0 0" range="-0.6981 2.3562" damping="0.002"/>
+            <geom name="left_arm_visual" type="mesh" mesh="left_arm_mesh" material="cyan_accent" contype="0" conaffinity="0"/>
+            <geom name="left_arm_collision" type="mesh" mesh="left_arm_mesh" material="cyan_accent"/>
+
+            <body name="left_pincer" pos="0 0 -0.026">
+              <inertial pos="0 0 -0.006789" mass="0.0015" diaginertia="4.527e-8 3.138e-8 1.741e-8"/>
+              <joint name="left_gripper_joint" type="hinge" axis="0 1 0" range="0.0 0.9599" damping="0.001"/>
+              <geom name="left_pincer_visual" type="mesh" mesh="left_pincer_mesh" material="yellow_amber" contype="0" conaffinity="0"/>
+              <geom name="left_pincer_collision" type="mesh" mesh="left_pincer_mesh" material="yellow_amber" friction="1.4 0.02 0.005"/>
+              <site name="pincer_l_pad" pos="0 0 -0.010" size="0.003" rgba="1 0.8 0 1"/>
+            </body>
+          </body>
+
+          <!-- Right Arm & Pincer -->
+          <body name="right_arm" pos="0.0485 0.002 0.044">
+            <inertial pos="0 0 -0.012585" mass="0.0152" diaginertia="1.396e-6 1.365e-6 1.477e-7"/>
+            <joint name="right_shoulder_joint" type="hinge" axis="1 0 0" range="-0.6981 2.3562" damping="0.002"/>
+            <geom name="right_arm_visual" type="mesh" mesh="right_arm_mesh" material="cyan_accent" contype="0" conaffinity="0"/>
+            <geom name="right_arm_collision" type="mesh" mesh="right_arm_mesh" material="cyan_accent"/>
+
+            <body name="right_pincer" pos="0 0 -0.026">
+              <inertial pos="0 0 -0.006789" mass="0.0015" diaginertia="4.527e-8 3.138e-8 1.741e-8"/>
+              <joint name="right_gripper_joint" type="hinge" axis="0 1 0" range="0.0 0.9599" damping="0.001"/>
+              <geom name="right_pincer_visual" type="mesh" mesh="right_pincer_mesh" material="yellow_amber" contype="0" conaffinity="0"/>
+              <geom name="right_pincer_collision" type="mesh" mesh="right_pincer_mesh" material="yellow_amber" friction="1.4 0.02 0.005"/>
+              <site name="pincer_r_pad" pos="0 0 -0.010" size="0.003" rgba="1 0.8 0 1"/>
+            </body>
+          </body>
+
+          <!-- Neck Turret -->
+          <body name="neck_turret" pos="0 0 0.062">
+            <inertial pos="0 0 0.008" mass="0.0186" diaginertia="1.137e-6 1.296e-6 1.747e-6"/>
+            <joint name="neck_yaw_joint" type="hinge" axis="0 0 1" range="-1.3090 1.3090" damping="0.005"/>
+            <geom name="neck_turret_visual" type="mesh" mesh="neck_turret_mesh" material="cyan_accent" contype="0" conaffinity="0"/>
+            <geom name="neck_turret_collision" type="mesh" mesh="neck_turret_mesh" material="cyan_accent"/>
+
+            <!-- Head Assembly -->
+            <body name="head" pos="0 0 0.012">
+              <inertial pos="0 0.002872 0.022" mass="0.0827" diaginertia="3.447e-5 3.447e-5 3.447e-5"/>
+              <joint name="neck_pitch_joint" type="hinge" axis="1 0 0" range="-0.5236 0.6981" damping="0.005"/>
+              <geom name="head_visual" type="mesh" mesh="head_mesh" material="teal_body" contype="0" conaffinity="0"/>
+              <geom name="head_collision" type="mesh" mesh="head_mesh" material="teal_body"/>
+
+              <!-- Dual OLED Eyes -->
+              <geom name="left_eye_geom" type="mesh" mesh="left_eye_mesh" pos="-0.0135 0.0350 0.0170" material="eye_glow" contype="0" conaffinity="0"/>
+              <geom name="right_eye_geom" type="mesh" mesh="right_eye_mesh" pos="0.0135 0.0350 0.0170" material="eye_glow" contype="0" conaffinity="0"/>
+
+              <!-- OV5640 Camera Vision Cone -->
+              <camera name="ov5640_cam" pos="0 0.032 0.025" fovy="65" mode="fixed" euler="1.5708 0 0"/>
+              <site name="gaze_target_site" pos="0 0.5 0.025" size="0.005" rgba="0 1 0 0.5"/>
+
+              <!-- TTP223 Crown Touch Pad Site -->
+              <site name="touch_crown_site" pos="0 0 0.040" size="0.012" material="gold_pad"/>
+
+              <!-- Left Ear -->
+              <body name="left_ear" pos="-0.032 0.002 0.030">
+                <inertial pos="0 0 0.0147" mass="0.0010" diaginertia="1.463e-7 1.356e-7 1.212e-8"/>
+                <joint name="left_ear_joint" type="hinge" axis="1 0 0" range="-1.1345 0.7854" damping="0.002"/>
+                <geom name="left_ear_visual" type="mesh" mesh="left_ear_mesh" material="yellow_amber" contype="0" conaffinity="0"/>
+                <geom name="left_ear_collision" type="mesh" mesh="left_ear_mesh" material="yellow_amber"/>
+              </body>
+
+              <!-- Right Ear -->
+              <body name="right_ear" pos="0.032 0.002 0.030">
+                <inertial pos="0 0 0.0147" mass="0.0010" diaginertia="1.463e-7 1.356e-7 1.212e-8"/>
+                <joint name="right_ear_joint" type="hinge" axis="1 0 0" range="-1.1345 0.7854" damping="0.002"/>
+                <geom name="right_ear_visual" type="mesh" mesh="right_ear_mesh" material="yellow_amber" contype="0" conaffinity="0"/>
+                <geom name="right_ear_collision" type="mesh" mesh="right_ear_mesh" material="yellow_amber"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <velocity name="wheel_l_act" joint="left_wheel_joint" kv="20" ctrlrange="-25 25"/>
+    <velocity name="wheel_r_act" joint="right_wheel_joint" kv="20" ctrlrange="-25 25"/>
+
+    <position name="neck_yaw_act" joint="neck_yaw_joint" kp="15" kv="1.5" ctrlrange="-1.3090 1.3090"/>
+    <position name="neck_pitch_act" joint="neck_pitch_joint" kp="15" kv="1.5" ctrlrange="-0.5236 0.6981"/>
+    <position name="left_shoulder_act" joint="left_shoulder_joint" kp="18" kv="1.8" ctrlrange="-0.6981 2.3562"/>
+    <position name="right_shoulder_act" joint="right_shoulder_joint" kp="18" kv="1.8" ctrlrange="-0.6981 2.3562"/>
+    <position name="left_pincer_act" joint="left_gripper_joint" kp="10" kv="1.0" ctrlrange="0.0 0.9599"/>
+    <position name="right_pincer_act" joint="right_gripper_joint" kp="10" kv="1.0" ctrlrange="0.0 0.9599"/>
+    <position name="left_ear_act" joint="left_ear_joint" kp="8" kv="0.8" ctrlrange="-1.1345 0.7854"/>
+    <position name="right_ear_act" joint="right_ear_joint" kp="8" kv="0.8" ctrlrange="-1.1345 0.7854"/>
+  </actuator>
+
+  <sensor>
+    <rangefinder name="cliff_fl_sensor" site="cliff_fl"/>
+    <rangefinder name="cliff_fr_sensor" site="cliff_fr"/>
+    <rangefinder name="cliff_rl_sensor" site="cliff_rl"/>
+    <rangefinder name="cliff_rr_sensor" site="cliff_rr"/>
+
+    <accelerometer name="imu_accel" site="imu_site"/>
+    <gyro name="imu_gyro" site="imu_site"/>
+
+    <jointpos name="encoder_l_pos" joint="left_wheel_joint"/>
+    <jointvel name="encoder_l_vel" joint="left_wheel_joint"/>
+    <jointpos name="encoder_r_pos" joint="right_wheel_joint"/>
+    <jointvel name="encoder_r_vel" joint="right_wheel_joint"/>
+  </sensor>
+</mujoco>
