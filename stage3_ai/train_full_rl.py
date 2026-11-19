@@ -55,32 +55,80 @@ def resolve_device() -> Tuple[str, str]:
 
 console = Console()
 
-class MistakeLoggerCallback(BaseCallback):
-    def __init__(self, mistake_buffer: MistakeReplayBuffer, check_freq: int = 4096, verbose: int = 1) -> None:
+class OutDistributionEvalCallback(BaseCallback):
+    def __init__(
+        self,
+        eval_freq: int = 25000,
+        n_eval_episodes: int = 10,
+        best_model_path: str = "stage3_ai/models/ppo_desk_pet_final.zip",
+        verbose: int = 1
+    ) -> None:
         super().__init__(verbose)
-        self.mistake_buffer = mistake_buffer
-        self.check_freq = check_freq
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.best_model_path = best_model_path
+        self.best_unseen_reward = -float("inf")
+        self.eval_env = StudyDeskArenaEnv(unseen_test_mode=True)
+        self.patience = 8
+        self.stagnation_count = 0
 
     def _on_step(self) -> bool:
-        if self.n_calls % self.check_freq == 0:
-            summary = self.mistake_buffer.get_mistake_summary()
-            if self.verbose > 0:
-                console.print(f"[#14B8A6][Mistake Callback][/] Step {self.num_timesteps:,} | Replay DB: {summary}")
+        if self.n_calls % (self.eval_freq // 16) == 0:
+            rewards = []
+            zero_collisions = 0
+            for ep in range(self.n_eval_episodes):
+                obs, _ = self.eval_env.reset(seed=1000 + ep)
+                done = False
+                ep_rew = 0.0
+                collided = False
+                while not done:
+                    action, _ = self.model.predict(obs, deterministic=True)
+                    obs, rew, term, trunc, info = self.eval_env.step(action)
+                    ep_rew += rew
+                    if info.get("mistake") in ("CLIFF_TRIGGER", "MUG_PROXIMITY_VIOLATION"):
+                        collided = True
+                    done = term or trunc
+                rewards.append(ep_rew)
+                if not collided:
+                    zero_collisions += 1
+
+            unseen_reward = float(np.mean(rewards))
+            zero_col_rate = (zero_collisions / self.n_eval_episodes) * 100.0
+
+            console.print(
+                f"[#06B6D4][OOD Validation @ Step {self.num_timesteps:,}][/] "
+                f"Unseen Desk Reward: [#EAB308]{unseen_reward:+.2f}[/] | "
+                f"Zero-Collision: [#14B8A6]{zero_col_rate:.1f}%[/]"
+            )
+
+            if unseen_reward > self.best_unseen_reward:
+                self.best_unseen_reward = unseen_reward
+                self.stagnation_count = 0
+                self.model.save(self.best_model_path)
+                console.print(f"  [bold green]★ New Best Generalizing Weights Saved:[/] {self.best_model_path}")
+            else:
+                self.stagnation_count += 1
+                if self.stagnation_count >= self.patience:
+                    console.print("[yellow]Early stopping triggered: Out-of-distribution validation plateaus.[/yellow]")
+                    return False
         return True
+
+    def _on_training_end(self) -> None:
+        self.eval_env.close()
 
 def make_env_fn(phase: int = 2) -> Callable[[], gym.Env]:
     def _init() -> gym.Env:
         return StudyDeskArenaEnv(curriculum_phase=phase)
     return _init
 
-def train_full_model(total_timesteps: int = 500000, n_envs: int = 16) -> str:
+def train_full_model(total_timesteps: int = 500000, n_envs: int = 16, sanity_only: bool = False) -> str:
     sys.stdout = TeeLogger(LOG_FILE)
 
     dev_str, dev_desc = resolve_device()
 
     banner = Panel.fit(
-        f"[bold #06B6D4]DESK PET: 500,000-STEP REINFORCEMENT LEARNING CONVERGENCE (PPO)[/bold #06B6D4]\n"
-        f"[dim]Device Engine: {dev_desc} | Vectorized Envs: {n_envs} | Target: 500k Timesteps[/dim]",
+        f"[bold #06B6D4]DESK PET: {'16k-STEP SANITY CHECK' if sanity_only else '500,000-STEP REINFORCEMENT LEARNING CONVERGENCE (PPO)'}[/bold #06B6D4]\n"
+        f"[dim]Device Engine: {dev_desc} | Vectorized Envs: {n_envs} | Target: {total_timesteps:,} Timesteps[/dim]",
         border_style="#06B6D4"
     )
     console.print(banner)
@@ -88,8 +136,6 @@ def train_full_model(total_timesteps: int = 500000, n_envs: int = 16) -> str:
     models_dir = "stage3_ai/models"
     os.makedirs(models_dir, exist_ok=True)
     final_model_path = os.path.join(models_dir, "ppo_desk_pet_final.zip")
-
-    mistake_buffer = MistakeReplayBuffer()
 
     console.print(f"[1/4] Spawning {n_envs} Vectorized StudyDeskArena Parallel Environments...")
     vec_env = make_vec_env(make_env_fn(phase=2), n_envs=n_envs, vec_env_cls=DummyVecEnv)
@@ -117,35 +163,35 @@ def train_full_model(total_timesteps: int = 500000, n_envs: int = 16) -> str:
         device=dev_str
     )
 
-    save_interval = max(8192, total_timesteps // 10)
-    mistake_cb = MistakeLoggerCallback(mistake_buffer, check_freq=save_interval, verbose=1)
-    checkpoint_cb = CheckpointCallback(save_freq=save_interval, save_path=models_dir, name_prefix="ppo_desk_pet_checkpoint")
+    eval_freq = 8192 if sanity_only else 25000
+    ood_cb = OutDistributionEvalCallback(eval_freq=eval_freq, best_model_path=final_model_path)
+    checkpoint_cb = CheckpointCallback(save_freq=max(8192, total_timesteps // 10), save_path=models_dir, name_prefix="ppo_desk_pet_ckpt")
 
-    console.print(f"[2/4] Executing Full PPO Convergence for {total_timesteps:,} Steps...")
+    console.print(f"[2/4] Executing PPO {'Sanity Check' if sanity_only else 'Convergence'} for {total_timesteps:,} Steps...")
     t_start = time.time()
-    model.learn(total_timesteps=total_timesteps, callback=[mistake_cb, checkpoint_cb])
+    model.learn(total_timesteps=total_timesteps, callback=[ood_cb, checkpoint_cb])
     elapsed = time.time() - t_start
 
     model.save(final_model_path)
-    model.save(os.path.join(models_dir, "desk_pet_ppo_final.zip"))
-    console.print(f"\n[3/4] [bold green]✔ Converged Policy Checkpoint Saved:[/] {final_model_path}")
+    console.print(f"\n[3/4] [bold green]✔ Model Checkpoint Successfully Saved:[/] {final_model_path}")
     console.print(f"      Wall-Clock Time: {elapsed:.1f}s ({elapsed/60.0:.1f} mins) | Throughput: {total_timesteps / elapsed:.0f} FPS\n")
 
-    console.print("[4/4] Running Comprehensive Post-Training Evaluation (20 Episodes)...")
-    eval_env = StudyDeskArenaEnv(curriculum_phase=2)
+    console.print("[4/4] Running Post-Training Held-Out Evaluation (20 Unseen Desks)...")
+    eval_env = StudyDeskArenaEnv(unseen_test_mode=True)
     mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=20, deterministic=True)
+    eval_env.close()
 
-    table = Table(title="PPO 500,000-STEP CONVERGENCE BENCHMARK SUMMARY", border_style="#14B8A6")
+    table = Table(title=f"PPO {total_timesteps:,}-STEP EVALUATION SUMMARY", border_style="#14B8A6")
     table.add_column("Convergence Metric", style="bold white")
     table.add_column("Trained Model Value", style="#EAB308")
     table.add_row("Total Timesteps Trained", f"{total_timesteps:,}")
     table.add_row("Parallel Environments", str(n_envs))
-    table.add_row("Mean Evaluation Reward", f"{mean_reward:+.2f}")
+    table.add_row("Held-Out Unseen Desk Reward", f"{mean_reward:+.2f}")
     table.add_row("Reward Standard Deviation", f"{std_reward:.2f}")
-    table.add_row("Final Policy Checkpoint", final_model_path)
+    table.add_row("Model Checkpoint", final_model_path)
     table.add_row("Mistake Replay Database", "stage3_ai/memory/mistakes.db")
     console.print(table)
-    console.print("\n[bold green]✔ Full 500,000-Step Reinforcement Learning Convergence Complete![/bold green]\n")
+    console.print(f"\n[bold green]✔ {total_timesteps:,}-Step Execution Complete![/bold green]\n")
 
     return final_model_path
 
@@ -153,6 +199,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full RL Policy Convergence for Desk Pet")
     parser.add_argument("--steps", type=int, default=500000, help="Total training timesteps (default: 500,000)")
     parser.add_argument("--envs", type=int, default=16, help="Number of parallel environments (default: 16)")
+    parser.add_argument("--sanity-check", action="store_true", help="Run 16,384-step sanity test")
     args = parser.parse_args()
 
-    train_full_model(total_timesteps=args.steps, n_envs=args.envs)
+    steps = 16384 if args.sanity_check else args.steps
+    train_full_model(total_timesteps=steps, n_envs=args.envs, sanity_only=args.sanity_check)

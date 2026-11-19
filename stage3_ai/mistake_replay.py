@@ -14,11 +14,41 @@ MISTAKE_TYPES = [
     "USER_CORRECTION_STAY_BACK"
 ]
 
+class HardSafetyShield:
+    @staticmethod
+    def filter_action(obs: np.ndarray, action: np.ndarray, mug_center: np.ndarray) -> Tuple[np.ndarray, bool]:
+        safe_act = action.copy()
+        intervened = False
+
+        cliff_readings = obs[0:4]
+        rx = float(obs[28]) if len(obs) > 28 else 0.0
+        ry = float(obs[29]) if len(obs) > 29 else 0.0
+
+        # Pre-cliff check (<2ms reflex)
+        front_cliff_danger = any(c > 0.038 for c in cliff_readings[:2]) or abs(rx) > 0.52 or abs(ry) > 0.24
+        if front_cliff_danger and (safe_act[0] + safe_act[1]) > 0.0:
+            safe_act[0] = -6.0
+            safe_act[1] = -6.0
+            intervened = True
+
+        # 12 cm Mug keep-out shield
+        dist_mug = float(np.sqrt((rx - mug_center[0])**2 + (ry - mug_center[1])**2))
+        if dist_mug < 0.13:
+            mug_vec = np.array([mug_center[0] - rx, mug_center[1] - ry])
+            cross_z = rx * mug_vec[1] - ry * mug_vec[0]
+            steer = 6.0 if cross_z > 0 else -6.0
+            safe_act[0] = -3.0 + steer
+            safe_act[1] = -3.0 - steer
+            intervened = True
+
+        return safe_act, intervened
+
 class MistakeReplayBuffer:
     def __init__(self, db_path: str = "stage3_ai/memory/mistakes.db") -> None:
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.safety_shield = HardSafetyShield()
         self._init_db()
 
     def _init_db(self) -> None:
@@ -95,24 +125,20 @@ class MistakeReplayBuffer:
         self.conn.commit()
         return batch
 
+    def sample_balanced_batch(self, batch_size: int = 16) -> List[Dict]:
+        mistake_k = max(1, int(batch_size * 0.30))
+        mistakes = self.sample_corrective_batch(batch_size=mistake_k)
+        return mistakes
+
     def decay_priority(self, mistake_id: int, decay_factor: float = 0.5) -> None:
         cursor = self.conn.cursor()
         cursor.execute("UPDATE mistakes SET priority = priority * ? WHERE id = ?", (decay_factor, mistake_id))
         self.conn.commit()
 
-    def get_mistake_counts(self) -> Dict[str, int]:
+    def get_mistake_summary(self) -> Dict[str, int]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT mistake_type, COUNT(*) FROM mistakes GROUP BY mistake_type")
-        counts = {m: 0 for m in MISTAKE_TYPES}
-        for mtype, count in cursor.fetchall():
-            counts[mtype] = count
-        return counts
-
-    def get_total_mistakes(self) -> int:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM mistakes")
-        row = cursor.fetchone()
-        return row[0] if row else 0
+        return {mtype: count for mtype, count in cursor.fetchall()}
 
     def close(self) -> None:
         self.conn.close()

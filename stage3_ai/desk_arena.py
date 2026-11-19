@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from typing import Any, Dict, List, Optional, Tuple
+import collections
 import gymnasium as gym
 from gymnasium import spaces
 import mujoco
@@ -21,18 +22,28 @@ class StudyDeskArenaEnv(gym.Env):
         xml_path: str = "stage3_ai/assets/single_desk_arena.xml",
         render_mode: Optional[str] = None,
         mistake_buffer: Optional[MistakeReplayBuffer] = None,
-        curriculum_phase: int = 1
+        curriculum_phase: int = 1,
+        unseen_test_mode: bool = False
     ) -> None:
         super().__init__()
         self.xml_path = os.path.abspath(xml_path)
         self.render_mode = render_mode
         self.mistake_buffer = mistake_buffer or MistakeReplayBuffer()
         self.curriculum_phase = curriculum_phase
+        self.unseen_test_mode = unseen_test_mode
 
         self.model = mujoco.MjModel.from_xml_path(self.xml_path)
-        # Apply stable numerical properties and collision bitmasks
         self._configure_physics()
         self.data = mujoco.MjData(self.model)
+
+        # Cache baseline physical parameters
+        self.base_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
+        self.nominal_base_mass = float(self.model.body_mass[self.base_body_id]) if self.base_body_id != -1 else 0.376
+        self.desk_geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "desk_top")
+        self.nominal_friction = float(self.model.geom_friction[self.desk_geom_id, 0]) if self.desk_geom_id != -1 else 0.45
+
+        self.mug_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "coffee_mug")
+        self.laptop_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "laptop")
 
         self.renderer: Optional[mujoco.Renderer] = None
         if self.render_mode == "rgb_array":
@@ -47,15 +58,16 @@ class StudyDeskArenaEnv(gym.Env):
         )
 
         # Observation: 36 dims
-        # 4 cliff rangefinders, 3 imu accel, 3 imu gyro, 2 wheel encoders, 8 joint pos, 8 joint vel,
-        # 2 robot xy, 2 robot yaw (sin, cos), 2 target vector to dock, 2 target vector to stylus
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(36,), dtype=np.float32)
 
         self.current_step = 0
         self.max_steps = 400
+
         self.mug_center = np.array([-0.35, 0.15], dtype=np.float32)
         self.dock_center = np.array([-0.48, -0.20], dtype=np.float32)
-        self.stylus_init_pos = np.array([0.00, 0.06], dtype=np.float32)
+        self.prev_dist_to_dock = 0.50
+        self.prev_action = np.zeros(10, dtype=np.float32)
+        self.action_queue: collections.deque[np.ndarray] = collections.deque(maxlen=2)
 
     def _configure_physics(self) -> None:
         self.model.dof_armature[:] = 0.005
@@ -80,16 +92,52 @@ class StudyDeskArenaEnv(gym.Env):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
 
-        # Randomize initial robot pose on safe area of the desk
-        # Stylus at (0, 0.06), robot spawned around (0, -0.15)
-        init_x = float(self.np_random.uniform(-0.15, 0.15))
-        init_y = float(self.np_random.uniform(-0.18, -0.05))
-        init_yaw = float(self.np_random.uniform(-0.5, 0.5))
+        # Domain Randomization (Layout, Friction, Base Mass)
+        if self.unseen_test_mode:
+            # Extreme unseen parameters for generalization audit
+            fric = float(self.np_random.uniform(0.18, 0.98))
+            mass_scale = float(self.np_random.uniform(0.80, 1.20))
+            mug_x = float(self.np_random.uniform(-0.38, -0.22))
+            mug_y = float(self.np_random.uniform(0.06, 0.22))
+            dock_x = float(self.np_random.uniform(-0.52, -0.40))
+            dock_y = float(self.np_random.uniform(-0.25, -0.15))
+        else:
+            fric = float(self.np_random.uniform(0.25, 0.85))
+            mass_scale = float(self.np_random.uniform(0.88, 1.12))
+            mug_x = float(self.np_random.uniform(-0.36, -0.28))
+            mug_y = float(self.np_random.uniform(0.10, 0.18))
+            dock_x = float(self.np_random.uniform(-0.50, -0.44))
+            dock_y = float(self.np_random.uniform(-0.22, -0.18))
 
-        # Root joint is Joint 1 (dof 6), qpos idx 7 (since Joint 0 stylus has 7 qpos)
+        if self.desk_geom_id != -1:
+            self.model.geom_friction[self.desk_geom_id, 0] = fric
+        if self.base_body_id != -1:
+            self.model.body_mass[self.base_body_id] = self.nominal_base_mass * mass_scale
+
+        self.mug_center = np.array([mug_x, mug_y], dtype=np.float32)
+        if self.mug_body_id != -1:
+            self.model.body_pos[self.mug_body_id, 0] = mug_x
+            self.model.body_pos[self.mug_body_id, 1] = mug_y
+
+        self.dock_center = np.array([dock_x, dock_y], dtype=np.float32)
+
+        # Randomize Stylus Position on desk
+        stylus_x = float(self.np_random.uniform(-0.06, 0.08))
+        stylus_y = float(self.np_random.uniform(0.02, 0.08))
+        self.data.qpos[0] = stylus_x
+        self.data.qpos[1] = stylus_y
+        self.data.qpos[2] = 0.006
+
+        # Safe Clean Robot Spawn coordinates:
+        # > 0.22 m clearance from coffee mug, > 0.15 m margin from desk edges
+        init_x = float(self.np_random.uniform(-0.08, 0.18))
+        init_y = float(self.np_random.uniform(-0.16, -0.06))
+        init_yaw = float(self.np_random.uniform(-0.35, 0.35))
+
+        # Root joint of robot is Joint 1 (qpos idx 7..13)
         self.data.qpos[7] = init_x
         self.data.qpos[8] = init_y
-        self.data.qpos[9] = 0.022
+        self.data.qpos[9] = 0.019  # Calibrated tire resting contact height
         cy = math.cos(init_yaw * 0.5)
         sy = math.sin(init_yaw * 0.5)
         self.data.qpos[10] = cy
@@ -97,27 +145,56 @@ class StudyDeskArenaEnv(gym.Env):
         self.data.qpos[12] = 0.0
         self.data.qpos[13] = sy
 
-        # S-curve warm-start keyframe posture for arms and ears
-        self.data.qpos[16] = 0.05  # left shoulder
-        self.data.qpos[18] = 0.05  # right shoulder
+        # Initialize arm keyframe postures
+        self.data.qpos[16] = 0.05
+        self.data.qpos[18] = 0.05
 
         mujoco.mj_forward(self.model, self.data)
+
+        # 5 Settle steps so TCRT5000 rangefinders & MPU6050 accelerometers stabilize
+        for _ in range(5):
+            mujoco.mj_step(self.model, self.data)
+
+        # Clear velocity artifacts from settling
+        self.data.qvel[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+
         self.current_step = 0
+        rx, ry = float(self.data.qpos[7]), float(self.data.qpos[8])
+        self.prev_dist_to_dock = math.sqrt((rx - self.dock_center[0])**2 + (ry - self.dock_center[1])**2)
+        self.prev_action = np.zeros(10, dtype=np.float32)
+        self.action_queue.clear()
+        self.action_queue.append(np.zeros(10, dtype=np.float32))
 
         obs = self._get_obs()
         return obs, {}
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         self.current_step += 1
-        act = np.clip(action, self.action_space.low, self.action_space.high)
-        self.data.ctrl[:] = act
+        raw_act = np.clip(action, self.action_space.low, self.action_space.high)
+
+        # 10-30 ms Control Delay Buffer
+        self.action_queue.append(raw_act)
+        delayed_act = self.action_queue.popleft()
+        self.data.ctrl[:] = delayed_act
+
+        # 3% chance of random external desk-bump impulse
+        if self.np_random.random() < 0.03:
+            bump_force = self.np_random.normal(0, 0.04, size=2)
+            self.data.qvel[6] += bump_force[0]
+            self.data.qvel[7] += bump_force[1]
 
         # Step 10 sub-steps (0.002s * 10 = 0.020s = 50 Hz control loop)
         for _ in range(10):
             mujoco.mj_step(self.model, self.data)
 
         obs = self._get_obs()
-        reward, terminated, truncated, info = self._compute_reward_and_status(obs, act)
+        reward, terminated, truncated, info = self._compute_reward_and_status(obs, delayed_act)
+
+        # Action-rate smoothness penalty: -0.05 * ||a_t - a_{t-1}||^2
+        action_diff = np.sum(np.square(delayed_act - self.prev_action))
+        reward -= 0.05 * float(action_diff)
+        self.prev_action = delayed_act.copy()
 
         if self.current_step >= self.max_steps:
             truncated = True
@@ -126,26 +203,28 @@ class StudyDeskArenaEnv(gym.Env):
 
     def _get_obs(self) -> np.ndarray:
         # Cliff rangefinder readings (4 sensors)
-        # In sensor array: indices 0..3 are rangefinders
         cliff_fl = float(self.data.sensordata[0])
         cliff_fr = float(self.data.sensordata[1])
         cliff_rl = float(self.data.sensordata[2])
         cliff_rr = float(self.data.sensordata[3])
 
-        # IMU Accelerometer + Gyro
-        imu_accel = self.data.sensordata[4:7]
-        imu_gyro = self.data.sensordata[7:10]
+        # 5% Transient IR sensor dropout simulation
+        if self.np_random.random() < 0.05:
+            cliff_fl = 0.021
 
-        # Wheel encoders
-        enc_l_vel = float(self.data.sensordata[11])
-        enc_r_vel = float(self.data.sensordata[13])
+        # IMU Accelerometer + Gyro with realistic Gaussian sensor noise
+        imu_accel = self.data.sensordata[4:7] + self.np_random.normal(0, 0.04, size=3)
+        imu_gyro = self.data.sensordata[7:10] + self.np_random.normal(0, 0.02, size=3)
+
+        # Wheel encoders with Gaussian noise
+        enc_l_vel = float(self.data.sensordata[11]) + float(self.np_random.normal(0, 0.02))
+        enc_r_vel = float(self.data.sensordata[13]) + float(self.np_random.normal(0, 0.02))
 
         # Joint positions & velocities (8 servos)
-        # qpos 14..21 are the 8 revolute joints
         joint_pos = self.data.qpos[14:22]
         joint_vel = self.data.qvel[12:20]
 
-        # Robot XY and heading
+        # Robot XY and heading from actual qpos
         rx = float(self.data.qpos[7])
         ry = float(self.data.qpos[8])
         qw = float(self.data.qpos[10])
@@ -162,11 +241,11 @@ class StudyDeskArenaEnv(gym.Env):
 
         obs = np.concatenate([
             np.array([cliff_fl, cliff_fr, cliff_rl, cliff_rr], dtype=np.float32),
-            imu_accel,
-            imu_gyro,
+            imu_accel.astype(np.float32),
+            imu_gyro.astype(np.float32),
             np.array([enc_l_vel, enc_r_vel], dtype=np.float32),
-            joint_pos,
-            joint_vel,
+            joint_pos.astype(np.float32),
+            joint_vel.astype(np.float32),
             np.array([rx, ry, sin_yaw, cos_yaw], dtype=np.float32),
             dock_vec,
             stylus_vec
@@ -175,12 +254,17 @@ class StudyDeskArenaEnv(gym.Env):
         return obs
 
     def _compute_reward_and_status(self, obs: np.ndarray, action: np.ndarray) -> Tuple[float, bool, bool, Dict[str, Any]]:
-        rx, ry = obs[26], obs[27]
+        # Actual Robot physical coordinates directly from self.data.qpos
+        rx = float(self.data.qpos[7])
+        ry = float(self.data.qpos[8])
+        rz = float(self.data.qpos[9])
         cliff_readings = obs[0:4]
 
         dist_to_mug = math.sqrt((rx - self.mug_center[0])**2 + (ry - self.mug_center[1])**2)
         dist_to_dock = math.sqrt((rx - self.dock_center[0])**2 + (ry - self.dock_center[1])**2)
-        dist_to_stylus = math.sqrt((rx - float(self.data.qpos[0]))**2 + (ry - float(self.data.qpos[1]))**2)
+        stylus_x = float(self.data.qpos[0])
+        stylus_y = float(self.data.qpos[1])
+        dist_to_stylus = math.sqrt((rx - stylus_x)**2 + (ry - stylus_y)**2)
 
         reward = 0.0
         terminated = False
@@ -193,7 +277,11 @@ class StudyDeskArenaEnv(gym.Env):
 
         # 1. Pre-cliff edge detection & emergency braking (<2 ms reflex)
         # Desk bounds are X: [-0.60, 0.60], Y: [-0.30, 0.30]
-        is_cliff_triggered = any(c > 0.038 for c in cliff_readings) or abs(rx) > 0.58 or abs(ry) > 0.28
+        # Drop-off occurs if chassis leaves desk boundaries or height drops below table surface
+        off_edge_pos = abs(rx) > 0.58 or abs(ry) > 0.28 or rz < -0.015
+        cliff_ir_drop = any(c > 0.045 for c in cliff_readings) and (abs(rx) > 0.54 or abs(ry) > 0.25)
+        is_cliff_triggered = off_edge_pos or cliff_ir_drop
+
         if is_cliff_triggered:
             reward -= 100.0
             terminated = True
@@ -201,40 +289,56 @@ class StudyDeskArenaEnv(gym.Env):
             self.mistake_buffer.record_mistake("CLIFF_TRIGGER", obs, action, penalty=100.0, priority=2.0)
             return reward, terminated, False, info
 
+        # Tilt / Roll-over failure guard (> 50 deg tilt)
+        qw = float(self.data.qpos[10])
+        qz = float(self.data.qpos[13])
+        qx = float(self.data.qpos[11])
+        qy = float(self.data.qpos[12])
+        upright = 1.0 - 2.0 * (qx * qx + qy * qy)
+        if upright < 0.40 or rz < 0.008:
+            reward -= 80.0
+            terminated = True
+            info["mistake"] = "TILT_OVERTURN"
+            return reward, terminated, False, info
+
         # 2. Semantic Hazard Keep-Out: 12 cm buffer around Hot Coffee Mug
         if dist_to_mug < 0.12:
             penetration = (0.12 - dist_to_mug)
-            penalty = 30.0 + 100.0 * penetration
+            penalty = 25.0 + 80.0 * penetration
             reward -= penalty
             info["mistake"] = "MUG_PROXIMITY_VIOLATION"
             self.mistake_buffer.record_mistake("MUG_PROXIMITY_VIOLATION", obs, action, penalty=penalty, priority=1.5)
         else:
             reward += 0.05  # Safe distance bonus
 
-        # 3. Surface Friction Traction (Wood vs Mat vs Paper)
+        # 3. Surface Friction Traction (Wood vs Cloth vs Paper)
         # Paper sheet is at X in [0.115, 0.325], Y in [-0.048, 0.248]
         on_paper = (0.115 <= rx <= 0.325) and (-0.048 <= ry <= 0.248)
-        wheel_slip = abs(action[0] - action[1]) > 12.0
+        wheel_slip = abs(action[0] - action[1]) > 14.0
         if on_paper and wheel_slip:
-            reward -= 5.0
+            reward -= 4.0
             info["mistake"] = "WHEEL_SKID_PAPER"
-            self.mistake_buffer.record_mistake("WHEEL_SKID_PAPER", obs, action, penalty=5.0, priority=1.0)
+            self.mistake_buffer.record_mistake("WHEEL_SKID_PAPER", obs, action, penalty=4.0, priority=1.0)
 
-        # 4. Docking & Navigation Progress
-        reward -= 0.8 * dist_to_dock
+        # 4. Dense Anti-Reward-Hacking Progress Reward (+2.0 * delta_distance_to_goal)
+        delta_dock = self.prev_dist_to_dock - dist_to_dock
+        reward += 2.0 * delta_dock
+        self.prev_dist_to_dock = dist_to_dock
+
+        # Gentle Idle-Stagnation Penalty (robot must not freeze still to evade learning)
+        if abs(action[0]) < 0.5 and abs(action[1]) < 0.5 and dist_to_dock > 0.10:
+            reward -= 0.02
+
+        # Docking Target Arrival Reward
         if dist_to_dock < 0.08:
-            reward += 15.0  # In docking pad
+            reward += 15.0
             if abs(action[0]) < 1.0 and abs(action[1]) < 1.0:
-                reward += 25.0  # Decelerated smoothly into sleep nest
+                reward += 25.0  # Decelerated settled into sleep nest
 
         # 5. Stylus Fetch Guidance
         if dist_to_stylus < 0.07:
-            # Pincer closure reward
             pincer_closure = (action[6] + action[7]) * 0.5
             reward += 10.0 * pincer_closure
-
-        # 6. Action Smoothness & Energy Efficiency
-        reward -= 0.002 * float(np.sum(np.square(action)))
 
         return reward, terminated, False, info
 

@@ -29,3 +29,7 @@ scratch/
 # PlatformIO build artifacts
 .pio/
 
+# Databases & local state
+*.db
+stage3_ai/memory/*.db
+

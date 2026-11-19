@@ -150,6 +150,9 @@ class HumanAdaptiveCompanionBrain:
         self.perception = MultimodalPerception()
         self.bond_level = 78.5
         self.mode = "Body-Doubling Silent Presence"
+        self.candidate_mode = "Body-Doubling Silent Presence"
+        self.mode_confirmation_ticks = 0
+        self.dismiss_cooldown_until = 0.0
         self.active_curriculum_stage = "Stage 3: Multi-Capability Adaptive Mastery"
         self.last_gaze_target = np.array([0.0, 0.5, 0.0], dtype=np.float32)
         self.voice_speech_buffer: List[str] = []
@@ -182,19 +185,34 @@ class HumanAdaptiveCompanionBrain:
             self.bond_level = min(100.0, self.bond_level + 0.15)
         if smile:
             self.bond_level = min(100.0, self.bond_level + 0.25)
-        if state["person_id"] == "Guest":
-            # Protective confidentiality mode around guests
-            self.mode = "Protective Guest Greeting"
+        # Check dismiss signal or 'not now' cooldown
+        now = time.time()
+        if signals.get("dismiss", False) or (command and ("not now" in command.lower() or "dismiss" in command.lower())):
+            self.dismiss_cooldown_until = now + 60.0
+            target_mode = "Flow-State Stealth Sentinel"
+        elif now < self.dismiss_cooldown_until:
+            target_mode = "Flow-State Stealth Sentinel"
+        elif state["person_id"] == "Guest":
+            target_mode = "Protective Guest Greeting"
         elif state["mood"] == "Focused":
-            self.mode = "Flow-State Stealth Sentinel"
+            target_mode = "Flow-State Stealth Sentinel"
         elif state["mood"] == "Stressed":
-            self.mode = "Empathetic Comfort"
+            target_mode = "Empathetic Comfort"
         elif state["mood"] == "Happy":
-            self.mode = "Playful Banter"
+            target_mode = "Playful Banter"
         elif state["mood"] == "Tired":
-            self.mode = "Circadian Night Wind-Down"
+            target_mode = "Circadian Night Wind-Down"
         else:
-            self.mode = "Body-Doubling Silent Presence"
+            target_mode = "Body-Doubling Silent Presence"
+
+        # Affective Hysteresis: Require 3 consecutive confirmation ticks before switching modes
+        if target_mode == self.candidate_mode:
+            self.mode_confirmation_ticks += 1
+            if self.mode_confirmation_ticks >= 3:
+                self.mode = target_mode
+        else:
+            self.candidate_mode = target_mode
+            self.mode_confirmation_ticks = 1
 
         # Executive command parsing
         action_intent = "IDLE_SENTINEL"
