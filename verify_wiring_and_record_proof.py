@@ -19,19 +19,28 @@ def find_chromium_path() -> str:
 
 def record_wiring_proof_video() -> None:
     video_dir = os.path.abspath("exports/videos")
+    renders_dir = os.path.abspath("exports/renders")
     os.makedirs(video_dir, exist_ok=True)
+    os.makedirs(renders_dir, exist_ok=True)
 
     chromium_path = find_chromium_path()
     if not chromium_path:
         raise RuntimeError("Chromium binary not found in local ms-playwright path")
 
     url = "http://localhost:8080/viewer.html"
+    frame_screenshot_path = os.path.join(renders_dir, "wiring_proof_frame.png")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
             executable_path=chromium_path,
             headless=True,
-            args=["--use-gl=angle", "--use-angle=swiftshader", "--no-sandbox"]
+            args=[
+                "--enable-webgl",
+                "--ignore-gpu-blocklist",
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
+                "--no-sandbox"
+            ]
         )
 
         context = browser.new_context(
@@ -41,28 +50,37 @@ def record_wiring_proof_video() -> None:
         )
 
         page = context.new_page()
+        page.on("pageerror", lambda err: print(f"[PageError] {err}"))
+        page.on("console", lambda msg: print(f"[Console {msg.type}] {msg.text}") if msg.type in ["error", "warning"] else None)
+
         print(f"Navigating to {url}...")
-        page.goto(url, wait_until="networkidle")
+        page.goto(url, wait_until="domcontentloaded")
 
-        try:
-            page.wait_for_selector("#loading", state="hidden", timeout=15000)
-        except Exception:
-            pass
+        print("Waiting for #loading-overlay to hide...")
+        page.wait_for_selector("#loading-overlay", state="hidden", timeout=30000)
+        time.sleep(0.5)
 
-        time.sleep(1.0)
         page.evaluate("if (isLiveSync) toggleWokwiSync();")
 
         print("Stage 1 (0-4s): Exploded clamshell inspection (35 mm) + 360-deg pan...")
         page.evaluate("window.setClamshellSplit(35);")
         page.evaluate("window.setWiringVisible(true);")
+        page.evaluate("window.setXrayMode(true);")
 
         steps_orbit = 40
-        radius = 250.0
-        phi = math.pi * 0.42
+        radius = 240.0
+        phi = math.pi * 0.40
+        captured_frame = False
+
         for i in range(steps_orbit):
             theta = (2.0 * math.pi * i) / steps_orbit
             page.evaluate(f"window.setCameraOrbit({radius}, {theta}, {phi});")
             time.sleep(0.10)
+
+            if i == 20 and not captured_frame:
+                print(f"Capturing t=2s verification frame to {frame_screenshot_path}...")
+                page.screenshot(path=frame_screenshot_path)
+                captured_frame = True
 
         print("Stage 2 (4-7s): Clamshell closing sequence (35 mm -> 0 mm sealed)...")
         steps_close = 30
@@ -70,13 +88,12 @@ def record_wiring_proof_video() -> None:
             frac = i / (steps_close - 1)
             dist = 35.0 * (1.0 - frac)
             theta = 0.5 + 0.3 * frac
-            cur_r = 250.0 - 50.0 * frac
+            cur_r = 240.0 - 40.0 * frac
             page.evaluate(f"window.setClamshellSplit({dist});")
             page.evaluate(f"window.setCameraOrbit({cur_r}, {theta}, {phi});")
             time.sleep(0.10)
 
         print("Stage 3 (7-11s): Dynamic neck yaw (+-75 deg) & pitch (-30 to +40 deg) sweep...")
-        page.evaluate("window.setXrayMode(true);")
         steps_neck = 40
         for i in range(steps_neck):
             t_frac = i / (steps_neck - 1)
@@ -117,7 +134,7 @@ def record_wiring_proof_video() -> None:
         "-i", final_webm,
         "-c:v", "libx264",
         "-preset", "fast",
-        "-crf", "22",
+        "-crf", "20",
         "-pix_fmt", "yuv420p",
         final_mp4
     ]
@@ -125,6 +142,14 @@ def record_wiring_proof_video() -> None:
     if res.returncode != 0:
         print(f"Warning: ffmpeg returned non-zero code {res.returncode}")
 
+    if os.path.exists(video_path) and os.path.abspath(video_path) != os.path.abspath(final_webm):
+        try:
+            os.remove(video_path)
+        except Exception:
+            pass
+
+    if os.path.exists(frame_screenshot_path) and os.path.getsize(frame_screenshot_path) > 0:
+        print(f"Verified t=2s frame:  {frame_screenshot_path} ({os.path.getsize(frame_screenshot_path):,} bytes)")
     if os.path.exists(final_webm) and os.path.getsize(final_webm) > 0:
         print(f"Verified WEBM proof: {final_webm} ({os.path.getsize(final_webm):,} bytes)")
     if os.path.exists(final_mp4) and os.path.getsize(final_mp4) > 0:

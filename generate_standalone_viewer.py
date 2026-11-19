@@ -129,9 +129,13 @@ html_content = f"""<!DOCTYPE html>
       overflow: hidden;
     }}
     #viewport {{
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100vw;
       height: 100vh;
       display: block;
+      z-index: 1;
     }}
     #hud {{
       position: absolute;
@@ -146,6 +150,7 @@ html_content = f"""<!DOCTYPE html>
       padding: 16px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.6);
       backdrop-filter: blur(8px);
+      z-index: 100;
     }}
     #hud::-webkit-scrollbar {{
       width: 5px;
@@ -359,7 +364,7 @@ html_content = f"""<!DOCTYPE html>
     .banner-val.teal {{ color: #14B8A6; }}
     .banner-val.red {{ color: #EF4444; }}
     .banner-val.green {{ color: #10B981; }}
-    #loading {{
+    #loading, #loading-overlay {{
       position: absolute;
       top: 50%;
       left: 50%;
@@ -368,6 +373,12 @@ html_content = f"""<!DOCTYPE html>
       letter-spacing: 2px;
       color: #06B6D4;
       font-weight: bold;
+      background: rgba(11, 15, 23, 0.9);
+      border: 1px solid #14B8A6;
+      border-radius: 8px;
+      padding: 16px 24px;
+      z-index: 9999;
+      pointer-events: none;
     }}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -375,7 +386,7 @@ html_content = f"""<!DOCTYPE html>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
 </head>
 <body>
-  <div id="loading">INITIALIZING CAD MESHES &amp; KINEMATICS...</div>
+  <div id="loading-overlay">INITIALIZING CAD MESHES &amp; KINEMATICS...</div>
   <div id="telemetry-banner">
     <div class="banner-title">
       <span>DESK COMPANION REAL-TIME TELEMETRY</span>
@@ -565,10 +576,13 @@ html_content = f"""<!DOCTYPE html>
         <div class="legend-item"><span class="legend-dot" style="background:#334155;"></span>Audio (Speaker/Amp)</div>
         <div class="legend-item"><span class="legend-dot" style="background:#64748B;"></span>Motors &amp; Bearing</div>
       </div>
-    <div id="proof-badge" style="display:none; position:fixed; bottom:24px; left:24px; z-index:9999; background:rgba(15,23,42,0.92); border:1.5px solid #10B981; border-radius:8px; padding:12px 20px; font-weight:bold; color:#10B981; font-size:14px; letter-spacing:0.5px; box-shadow:0 8px 32px rgba(0,0,0,0.8);">
-      &#10004; 31/31 PARTS + 5 HARNESSES: 0.00 mm³ COLLISION (PASS)
     </div>
   </div>
+
+  <div id="proof-badge" style="display:none; position:fixed; bottom:24px; left:24px; z-index:9999; background:rgba(15,23,42,0.92); border:1.5px solid #10B981; border-radius:8px; padding:12px 20px; font-weight:bold; color:#10B981; font-size:14px; letter-spacing:0.5px; box-shadow:0 8px 32px rgba(0,0,0,0.8);">
+    &#10004; 31/31 PARTS + 5 HARNESSES: 0.00 mm³ COLLISION (PASS)
+  </div>
+
   <div id="viewport"></div>
   <script>
     const scene = new THREE.Scene();
@@ -578,7 +592,12 @@ html_content = f"""<!DOCTYPE html>
     camera.up.set(0, 0, 1);
     camera.position.set(85, 220, 125);
 
-    const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+    const renderer = new THREE.WebGLRenderer({{
+      antialias: true,
+      preserveDrawingBuffer: true,
+      alpha: true,
+      powerPreference: "high-performance"
+    }});
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     document.getElementById('viewport').appendChild(renderer.domElement);
@@ -623,66 +642,79 @@ html_content = f"""<!DOCTYPE html>
     const shellMeshes = [];
 
     function createMesh(name) {{
-      const d = rawData[name];
-      if (!d) return new THREE.Group();
-      const buffer = base64ToArrayBuffer(d.b64);
-      const geom = loader.parse(buffer);
-      
-      let mat;
-      if (name.includes('eye')) {{
-        mat = new THREE.MeshStandardMaterial({{
-          color: 0x06B6D4,
-          emissive: 0x06B6D4,
-          emissiveIntensity: 0.9,
-          roughness: 0.2,
-          metalness: 0.1
-        }});
-      }} else {{
-        mat = new THREE.MeshStandardMaterial({{
-          color: d.color,
-          metalness: 0.3,
-          roughness: 0.5,
-          transparent: false,
-          opacity: 1.0
-        }});
+      try {{
+        const d = rawData[name];
+        if (!d) return new THREE.Group();
+        const buffer = base64ToArrayBuffer(d.b64);
+        const geom = loader.parse(buffer);
+        
+        let mat;
+        if (name.includes('eye')) {{
+          mat = new THREE.MeshStandardMaterial({{
+            color: 0x06B6D4,
+            emissive: 0x06B6D4,
+            emissiveIntensity: 0.9,
+            roughness: 0.2,
+            metalness: 0.1
+          }});
+        }} else {{
+          mat = new THREE.MeshStandardMaterial({{
+            color: d.color,
+            metalness: 0.3,
+            roughness: 0.5,
+            transparent: false,
+            opacity: 1.0
+          }});
+        }}
+        const mesh = new THREE.Mesh(geom, mat);
+        if (!name.includes('eye')) {{
+          shellMeshes.push(mesh);
+        }}
+        return mesh;
+      }} catch(err) {{
+        console.error("Error creating mesh: " + name, err);
+        return new THREE.Group();
       }}
-      const mesh = new THREE.Mesh(geom, mat);
-      if (!name.includes('eye')) {{
-        shellMeshes.push(mesh);
-      }}
-      return mesh;
     }}
 
     const internalMeshes = [];
     for (const [name, d] of Object.entries(rawInternals)) {{
-      const buf = base64ToArrayBuffer(d.b64);
-      const g = loader.parse(buf);
-      const m = new THREE.MeshStandardMaterial({{
-        color: d.color,
-        roughness: 0.3,
-        metalness: 0.4
-      }});
-      const mesh = new THREE.Mesh(g, m);
-      mesh.visible = false;
-      robotRoot.add(mesh);
-      internalMeshes.push(mesh);
+      try {{
+        const buf = base64ToArrayBuffer(d.b64);
+        const g = loader.parse(buf);
+        const m = new THREE.MeshStandardMaterial({{
+          color: d.color,
+          roughness: 0.3,
+          metalness: 0.4
+        }});
+        const mesh = new THREE.Mesh(g, m);
+        mesh.visible = false;
+        robotRoot.add(mesh);
+        internalMeshes.push(mesh);
+      }} catch(err) {{
+        console.error("Error creating internal component mesh: " + name, err);
+      }}
     }}
 
     const harnessMeshes = [];
     for (const [name, d] of Object.entries(rawHarnesses)) {{
-      const buf = base64ToArrayBuffer(d.b64);
-      const g = loader.parse(buf);
-      const m = new THREE.MeshStandardMaterial({{
-        color: d.color,
-        roughness: 0.35,
-        metalness: 0.3,
-        emissive: d.color,
-        emissiveIntensity: 0.25
-      }});
-      const mesh = new THREE.Mesh(g, m);
-      mesh.visible = true;
-      robotRoot.add(mesh);
-      harnessMeshes.push(mesh);
+      try {{
+        const buf = base64ToArrayBuffer(d.b64);
+        const g = loader.parse(buf);
+        const m = new THREE.MeshStandardMaterial({{
+          color: d.color,
+          roughness: 0.35,
+          metalness: 0.3,
+          emissive: d.color,
+          emissiveIntensity: 0.25
+        }});
+        const mesh = new THREE.Mesh(g, m);
+        mesh.visible = true;
+        robotRoot.add(mesh);
+        harnessMeshes.push(mesh);
+      }} catch(err) {{
+        console.error("Error creating harness mesh: " + name, err);
+      }}
     }}
 
     const baseMesh = createMesh('base_link');
@@ -774,7 +806,10 @@ html_content = f"""<!DOCTYPE html>
     rightEarMesh.rotation.set(THREE.MathUtils.degToRad(49.08), THREE.MathUtils.degToRad(20.0), 0);
     rightEarPivot.add(rightEarMesh);
 
-    document.getElementById('loading').style.display = 'none';
+    const overlay = document.getElementById('loading-overlay') || document.getElementById('loading');
+    if (overlay) {{
+      overlay.style.display = 'none';
+    }}
 
     let isXrayMode = false;
     let clamshellSplitDist = 0;
