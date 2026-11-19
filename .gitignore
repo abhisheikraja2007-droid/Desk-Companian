@@ -33,3 +33,4 @@ scratch/
 *.db
 stage3_ai/memory/*.db
 
+MUJOCO_LOG.TXT
