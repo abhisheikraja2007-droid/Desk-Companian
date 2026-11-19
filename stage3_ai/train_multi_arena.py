@@ -108,6 +108,15 @@ def build_multi_desk_xml(
             desk = copy.deepcopy(template_desk)
             desk.attrib["name"] = f"desk_{idx}"
             desk.attrib["pos"] = f"{ox:.2f} {oy:.2f} 0.0"
+
+            # Rename all desk child bodies, geoms, sites
+            for elem in desk.iter():
+                for attr in ["name", "joint", "site"]:
+                    if attr in elem.attrib:
+                        val = elem.attrib[attr]
+                        if not val.endswith(f"_{idx}"):
+                            elem.attrib[attr] = f"{val}_{idx}"
+
             worldbody.append(desk)
 
             # Stylus
@@ -116,8 +125,11 @@ def build_multi_desk_xml(
                 stylus.attrib["name"] = f"stylus_{idx}"
                 stylus.attrib["pos"] = f"{ox:.2f} {oy + 0.06:.2f} 0.006"
                 for elem in stylus.iter():
-                    if "name" in elem.attrib and elem.attrib["name"] == "stylus_joint":
-                        elem.attrib["name"] = f"stylus_joint_{idx}"
+                    for attr in ["name", "joint", "site"]:
+                        if attr in elem.attrib:
+                            val = elem.attrib[attr]
+                            if not val.endswith(f"_{idx}"):
+                                elem.attrib[attr] = f"{val}_{idx}"
                 worldbody.append(stylus)
 
             # Robot body
@@ -130,7 +142,7 @@ def build_multi_desk_xml(
                 for attr in ["name", "joint", "site"]:
                     if attr in elem.attrib:
                         val = elem.attrib[attr]
-                        if not val.endswith(f"_{idx}") and "mesh" not in val and "mat" not in val:
+                        if not val.endswith(f"_{idx}"):
                             elem.attrib[attr] = f"{val}_{idx}"
 
             worldbody.append(pet)
@@ -286,7 +298,7 @@ def run_multi_arena_training_and_record() -> None:
     brain = HumanAdaptiveCompanionBrain()
 
     console.print("[3/5] Launching Parallel RL Policy Training on RTX 5050...")
-    renderer = mujoco.Renderer(model, width=1280, height=720)
+    renderer = mujoco.Renderer(model, height=720, width=1280)
     video_path_mp4 = "exports/videos/stage3_multi_robot_training.mp4"
     video_path_webm = "exports/videos/stage3_multi_robot_training.webm"
     os.makedirs("exports/videos", exist_ok=True)
