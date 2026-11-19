@@ -490,7 +490,7 @@ def print_benchmark_table(console: Console) -> None:
     table.add_column("Capability Name", style="bold white")
     table.add_column("Subsystem / Mechanism", style="yellow")
     table.add_column("Sensor / Actuator Target", style="dim white")
-    table.add_column("RL Metric / Spec", justify="center", style="teal")
+    table.add_column("RL Metric / Spec", justify="center", style="#14B8A6")
     table.add_column("Status", justify="center", style="bold green")
 
     capabilities = [
