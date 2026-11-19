@@ -1,0 +1,43 @@
+name: Desk Pet 8-DOF End-to-End Verification
+version: 1
+author: Antigravity Robotics
+steps:
+  - wait-serial: "DESK_PET_READY"
+  - wait-time: 200ms
+  - set-control:
+      part: pet_touch
+      control: button
+      value: down
+  - wait-serial: "[TOUCH] Crown petted!"
+  - wait-time: 100ms
+  - set-control:
+      part: pet_touch
+      control: button
+      value: up
+  - wait-time: 500ms
+  - set-control:
+      part: cliff_fl
+      control: button
+      value: down
+  - wait-serial: "[CLIFF] Triggered sensor 1! Reversing..."
+  - wait-time: 100ms
+  - set-control:
+      part: cliff_fl
+      control: button
+      value: up
+  - wait-time: 500ms
+  - set-control:
+      part: cliff_fr
+      control: button
+      value: down
+  - wait-serial: "[CLIFF] Triggered sensor 2! Reversing..."
+  - wait-time: 100ms
+  - set-control:
+      part: cliff_fr
+      control: button
+      value: up
+  - wait-time: 500ms
+  - send-serial: '{"joints":[105,95,120,60,110,80,110,100]}'
+  - wait-time: 300ms
+  - send-serial: '{"emotion":"curious"}'
+  - wait-time: 200ms

@@ -25,3 +25,7 @@ $RECYCLE.BIN/
 # Logs & scratch
 *.log
 scratch/
+
+# PlatformIO build artifacts
+.pio/
+

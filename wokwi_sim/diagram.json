@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "author": "Antigravity Robotics",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-s3-devkitc-1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled_eyes",
+      "top": -220,
+      "left": -60,
+      "attrs": { "i2cAddress": "0x3c" }
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "imu",
+      "top": -210,
+      "left": 140,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "pet_touch",
+      "top": -120,
+      "left": 150,
+      "attrs": { "color": "cyan", "label": "TTP223 Crown Touch" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "neck_yaw",
+      "top": -140,
+      "left": -280,
+      "attrs": { "label": "Neck Yaw (GPIO 4)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "neck_pitch",
+      "top": -140,
+      "left": 320,
+      "attrs": { "label": "Neck Pitch (GPIO 5)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "ear_left",
+      "top": -260,
+      "left": -280,
+      "attrs": { "label": "Ear Left (GPIO 6)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "ear_right",
+      "top": -260,
+      "left": 320,
+      "attrs": { "label": "Ear Right (GPIO 7)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "arm_left",
+      "top": 0,
+      "left": -280,
+      "attrs": { "label": "Arm Left (GPIO 15)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "arm_right",
+      "top": 0,
+      "left": 320,
+      "attrs": { "label": "Arm Right (GPIO 16)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "pincer_left",
+      "top": 140,
+      "left": -280,
+      "attrs": { "label": "Pincer Left (GPIO 17)" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "pincer_right",
+      "top": 140,
+      "left": 320,
+      "attrs": { "label": "Pincer Right (GPIO 18)" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "cliff_fl",
+      "top": 360,
+      "left": -120,
+      "attrs": { "color": "red", "label": "Cliff FL (GPIO 10)" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "cliff_fr",
+      "top": 360,
+      "left": 100,
+      "attrs": { "color": "red", "label": "Cliff FR (GPIO 11)" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "cliff_rl",
+      "top": 460,
+      "left": -120,
+      "attrs": { "color": "red", "label": "Cliff RL (GPIO 12)" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "cliff_rr",
+      "top": 460,
+      "left": 100,
+      "attrs": { "color": "red", "label": "Cliff RR (GPIO 13)" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_l_fwd",
+      "top": 280,
+      "left": -240,
+      "attrs": { "color": "green", "label": "L Wheel FWD (GPIO 1)" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_l_rev",
+      "top": 280,
+      "left": -180,
+      "attrs": { "color": "orange", "label": "L Wheel REV (GPIO 2)" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_r_fwd",
+      "top": 280,
+      "left": 200,
+      "attrs": { "color": "green", "label": "R Wheel FWD (GPIO 21)" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_r_rev",
+      "top": 280,
+      "left": 260,
+      "attrs": { "color": "orange", "label": "R Wheel REV (GPIO 47)" }
+    }
+  ],
+  "connections": [
+    [ "esp:5V", "oled_eyes:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "oled_eyes:GND", "black", [ "v0" ] ],
+    [ "esp:8", "oled_eyes:SDA", "cyan", [ "v-20", "h-20" ] ],
+    [ "esp:9", "oled_eyes:SCL", "blue", [ "v-30", "h-10" ] ],
+
+    [ "esp:5V", "imu:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "imu:GND", "black", [ "v0" ] ],
+    [ "esp:8", "imu:SDA", "cyan", [ "v-20", "h40" ] ],
+    [ "esp:9", "imu:SCL", "blue", [ "v-30", "h50" ] ],
+
+    [ "esp:14", "pet_touch:1.l", "cyan", [ "v0" ] ],
+    [ "esp:GND.2", "pet_touch:2.r", "black", [ "v0" ] ],
+
+    [ "esp:4", "neck_yaw:PWM", "orange", [ "v0" ] ],
+    [ "esp:5V", "neck_yaw:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "neck_yaw:GND", "black", [ "v0" ] ],
+
+    [ "esp:5", "neck_pitch:PWM", "orange", [ "v0" ] ],
+    [ "esp:5V", "neck_pitch:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "neck_pitch:GND", "black", [ "v0" ] ],
+
+    [ "esp:6", "ear_left:PWM", "yellow", [ "v0" ] ],
+    [ "esp:5V", "ear_left:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "ear_left:GND", "black", [ "v0" ] ],
+
+    [ "esp:7", "ear_right:PWM", "yellow", [ "v0" ] ],
+    [ "esp:5V", "ear_right:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "ear_right:GND", "black", [ "v0" ] ],
+
+    [ "esp:15", "arm_left:PWM", "green", [ "v0" ] ],
+    [ "esp:5V", "arm_left:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "arm_left:GND", "black", [ "v0" ] ],
+
+    [ "esp:16", "arm_right:PWM", "green", [ "v0" ] ],
+    [ "esp:5V", "arm_right:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "arm_right:GND", "black", [ "v0" ] ],
+
+    [ "esp:17", "pincer_left:PWM", "purple", [ "v0" ] ],
+    [ "esp:5V", "pincer_left:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "pincer_left:GND", "black", [ "v0" ] ],
+
+    [ "esp:18", "pincer_right:PWM", "purple", [ "v0" ] ],
+    [ "esp:5V", "pincer_right:V+", "red", [ "v0" ] ],
+    [ "esp:GND.1", "pincer_right:GND", "black", [ "v0" ] ],
+
+    [ "esp:10", "cliff_fl:1.l", "red", [ "v0" ] ],
+    [ "esp:GND.2", "cliff_fl:2.l", "black", [ "v0" ] ],
+
+    [ "esp:11", "cliff_fr:1.l", "red", [ "v0" ] ],
+    [ "esp:GND.2", "cliff_fr:2.l", "black", [ "v0" ] ],
+
+    [ "esp:12", "cliff_rl:1.l", "red", [ "v0" ] ],
+    [ "esp:GND.2", "cliff_rl:2.l", "black", [ "v0" ] ],
+
+    [ "esp:13", "cliff_rr:1.l", "red", [ "v0" ] ],
+    [ "esp:GND.2", "cliff_rr:2.l", "black", [ "v0" ] ],
+
+    [ "esp:1", "led_l_fwd:A", "green", [ "v0" ] ],
+    [ "esp:GND.2", "led_l_fwd:C", "black", [ "v0" ] ],
+
+    [ "esp:2", "led_l_rev:A", "orange", [ "v0" ] ],
+    [ "esp:GND.2", "led_l_rev:C", "black", [ "v0" ] ],
+
+    [ "esp:21", "led_r_fwd:A", "green", [ "v0" ] ],
+    [ "esp:GND.2", "led_r_fwd:C", "black", [ "v0" ] ],
+
+    [ "esp:47", "led_r_rev:A", "orange", [ "v0" ] ],
+    [ "esp:GND.2", "led_r_rev:C", "black", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

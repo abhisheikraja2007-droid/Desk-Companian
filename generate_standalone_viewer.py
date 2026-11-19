@@ -304,6 +304,14 @@ html_content = f"""<!DOCTYPE html>
   <div id="hud">
     <h1>Desk Pet 8-DOF HUD</h1>
     <div class="stat-row">
+      <span class="stat-label">Live Wokwi Sync:</span>
+      <span id="wokwi-badge" class="status-badge" style="background: rgba(100, 116, 139, 0.2); color: #94A3B8; border-color: #475569;">OFFLINE</span>
+    </div>
+    <div class="stat-row" id="wokwi-event-row" style="display:none;">
+      <span class="stat-label">Hardware Event:</span>
+      <span id="wokwi-event-val" class="stat-val accent" style="font-size: 11px;">NONE</span>
+    </div>
+    <div class="stat-row">
       <span class="stat-label">Kinematic State:</span>
       <span class="status-badge">ONLINE &amp; CALIBRATED</span>
     </div>
@@ -421,6 +429,7 @@ html_content = f"""<!DOCTYPE html>
     </div>
 
     <div id="controls">
+      <button class="ctrl-btn highlight" id="btn-wokwi-sync" onclick="toggleWokwiSync()" style="flex: 1 1 100%; font-weight: bold; background: rgba(6, 182, 212, 0.25); border-color: #06B6D4; color: #06B6D4;">Live Wokwi Sync: OFF</button>
       <button class="ctrl-btn highlight" id="btn-dfa" onclick="toggleClamshellSplit()">DFA Clamshell Split</button>
       <button class="ctrl-btn" id="btn-xray" onclick="toggleXray()">X-Ray Mode: OFF</button>
       <button class="ctrl-btn" id="btn-explode" onclick="toggleExploded()">Explode View</button>
@@ -697,7 +706,135 @@ html_content = f"""<!DOCTYPE html>
       }}
     }}
 
-    function setEyeExpression(mode) {{
+    let ws = null;
+    let isLiveSync = false;
+    let wheelDriveState = [0, 0, 0, 0];
+    let gridOffset = 0;
+
+    function toggleWokwiSync() {{
+      isLiveSync = !isLiveSync;
+      const btn = document.getElementById('btn-wokwi-sync');
+      const badge = document.getElementById('wokwi-badge');
+      if (isLiveSync) {{
+        btn.innerText = "Live Wokwi Sync: ON";
+        btn.style.background = "rgba(20, 184, 166, 0.3)";
+        btn.style.borderColor = "#14B8A6";
+        btn.style.color = "#14B8A6";
+        connectWebSocket();
+      }} else {{
+        btn.innerText = "Live Wokwi Sync: OFF";
+        btn.style.background = "rgba(6, 182, 212, 0.25)";
+        btn.style.borderColor = "#06B6D4";
+        btn.style.color = "#06B6D4";
+        badge.innerText = "OFFLINE";
+        badge.style.background = "rgba(100, 116, 139, 0.2)";
+        badge.style.color = "#94A3B8";
+        badge.style.borderColor = "#475569";
+        wheelDriveState = [0, 0, 0, 0];
+        if (ws) {{
+          ws.close();
+          ws = null;
+        }}
+      }}
+    }}
+
+    function connectWebSocket() {{
+      const badge = document.getElementById('wokwi-badge');
+      badge.innerText = "CONNECTING...";
+      badge.style.background = "rgba(234, 179, 8, 0.2)";
+      badge.style.color = "#EAB308";
+      badge.style.borderColor = "#EAB308";
+
+      try {{
+        ws = new WebSocket("ws://localhost:8765");
+      }} catch(e) {{
+        badge.innerText = "BRIDGE ERROR";
+        return;
+      }}
+
+      ws.onopen = function() {{
+        badge.innerText = "CONNECTED TO WOKWI";
+        badge.style.background = "rgba(20, 184, 166, 0.25)";
+        badge.style.color = "#14B8A6";
+        badge.style.borderColor = "#14B8A6";
+      }};
+
+      ws.onclose = function() {{
+        if (isLiveSync) {{
+          badge.innerText = "WAITING FOR BRIDGE";
+          badge.style.background = "rgba(239, 68, 68, 0.2)";
+          badge.style.color = "#EF4444";
+          badge.style.borderColor = "#EF4444";
+          setTimeout(() => {{ if (isLiveSync) connectWebSocket(); }}, 2000);
+        }}
+      }};
+
+      ws.onerror = function() {{
+        badge.innerText = "BRIDGE DISCONNECTED";
+      }};
+
+      ws.onmessage = function(event) {{
+        if (!isLiveSync) return;
+        try {{
+          const data = JSON.parse(event.data);
+          if (data.wokwi_status) {{
+            if (data.wokwi_status === "connected") {{
+              badge.innerText = "CONNECTED TO WOKWI";
+              badge.style.background = "rgba(20, 184, 166, 0.25)";
+              badge.style.color = "#14B8A6";
+              badge.style.borderColor = "#14B8A6";
+            }} else {{
+              badge.innerText = "SIM PAUSED / IDLE";
+              badge.style.background = "rgba(234, 179, 8, 0.2)";
+              badge.style.color = "#EAB308";
+              badge.style.borderColor = "#EAB308";
+            }}
+          }}
+
+          if (data.event) {{
+            const evRow = document.getElementById('wokwi-event-row');
+            const evVal = document.getElementById('wokwi-event-val');
+            evRow.style.display = 'flex';
+            evVal.innerText = data.event;
+            evVal.style.color = data.event.includes("CLIFF") ? "#EF4444" : "#EAB308";
+          }}
+
+          if (data.wheels && Array.isArray(data.wheels)) {{
+            wheelDriveState = data.wheels;
+          }}
+
+          if (data.joints && Array.isArray(data.joints) && data.joints.length === 8) {{
+            const j = data.joints;
+            const yaw = j[0] - 90;
+            const pitch = j[1] - 90;
+            const earL = j[2] - 110;
+            const earR = 70 - j[3];
+            const shoulderL = j[4] - 90;
+            const shoulderR = j[5] - 90;
+            const pincerL = j[6] - 90;
+            const pincerR = j[7] - 90;
+
+            document.getElementById('slider-yaw').value = yaw;
+            document.getElementById('slider-pitch').value = pitch;
+            document.getElementById('slider-ear-l').value = earL;
+            document.getElementById('slider-ear-r').value = earR;
+            document.getElementById('slider-shoulder-l').value = shoulderL;
+            document.getElementById('slider-shoulder-r').value = shoulderR;
+            document.getElementById('slider-pincer-l').value = Math.max(0, pincerL);
+            document.getElementById('slider-pincer-r').value = Math.max(0, pincerR);
+            updateJoints(false);
+          }}
+
+          if (data.emotion) {{
+            setEyeExpression(data.emotion === 'neutral' ? 'happy' : data.emotion, false);
+          }}
+        }} catch(err) {{
+          console.error(err);
+        }}
+      }};
+    }}
+
+    function setEyeExpression(mode, echoToWs = true) {{
       document.querySelectorAll('.exp-btn').forEach(btn => {{
         if (btn.id.startsWith('btn-clam-')) return;
         btn.classList.remove('active');
@@ -705,7 +842,7 @@ html_content = f"""<!DOCTYPE html>
       const activeBtn = document.getElementById('btn-' + mode);
       if (activeBtn) activeBtn.classList.add('active');
 
-      if (mode === 'happy') {{
+      if (mode === 'happy' || mode === 'neutral') {{
         leftEyeMesh.scale.set(1.15, 0.65, 1.0);
         leftEyeMesh.rotation.z = 0.12;
         rightEyeMesh.scale.set(1.15, 0.65, 1.0);
@@ -734,9 +871,13 @@ html_content = f"""<!DOCTYPE html>
         if (leftEyeMesh.material) leftEyeMesh.material.emissive.setHex(0x00F0FF);
         if (rightEyeMesh.material) rightEyeMesh.material.emissive.setHex(0x00F0FF);
       }}
+
+      if (echoToWs && isLiveSync && ws && ws.readyState === WebSocket.OPEN) {{
+        ws.send(JSON.stringify({{ emotion: mode }}));
+      }}
     }}
 
-    function updateJoints() {{
+    function updateJoints(echoToWs = true) {{
       const earL = parseFloat(document.getElementById('slider-ear-l').value);
       const earR = parseFloat(document.getElementById('slider-ear-r').value);
       const yaw = parseFloat(document.getElementById('slider-yaw').value);
@@ -763,21 +904,39 @@ html_content = f"""<!DOCTYPE html>
       rightShoulder.rotation.x = THREE.MathUtils.degToRad(shoulderR);
       leftWrist.rotation.y = THREE.MathUtils.degToRad(-pincerL);
       rightWrist.rotation.y = THREE.MathUtils.degToRad(pincerR);
+
+      if (echoToWs && isLiveSync && ws && ws.readyState === WebSocket.OPEN) {{
+        const targetAngles = [
+          Math.round(yaw + 90),
+          Math.round(pitch + 90),
+          Math.round(earL + 110),
+          Math.round(70 - earR),
+          Math.round(shoulderL + 90),
+          Math.round(shoulderR + 90),
+          Math.round(pincerL + 90),
+          Math.round(pincerR + 90)
+        ];
+        ws.send(JSON.stringify({{ joints: targetAngles }}));
+      }}
     }}
 
-    function setPreset(name) {{
+    function setPreset(name, echoToWs = true) {{
       if (name === 'neutral') {{
         setSliders({{ 'slider-ear-l': 0, 'slider-ear-r': 0, 'slider-yaw': 0, 'slider-pitch': 0, 'slider-shoulder-l': 0, 'slider-shoulder-r': 0, 'slider-pincer-l': 0, 'slider-pincer-r': 0 }});
-        setEyeExpression('happy');
+        setEyeExpression('happy', false);
       }} else if (name === 'wave') {{
         setSliders({{ 'slider-ear-l': 20, 'slider-ear-r': 20, 'slider-yaw': 15, 'slider-pitch': 10, 'slider-shoulder-l': 95, 'slider-shoulder-r': 15, 'slider-pincer-l': 40, 'slider-pincer-r': 0 }});
-        setEyeExpression('curious');
+        setEyeExpression('curious', false);
       }} else if (name === 'hold') {{
         setSliders({{ 'slider-ear-l': 10, 'slider-ear-r': 10, 'slider-yaw': 0, 'slider-pitch': -15, 'slider-shoulder-l': 55, 'slider-shoulder-r': 55, 'slider-pincer-l': 28, 'slider-pincer-r': 28 }});
-        setEyeExpression('alert');
+        setEyeExpression('alert', false);
       }} else if (name === 'alert') {{
         setSliders({{ 'slider-ear-l': 45, 'slider-ear-r': 45, 'slider-yaw': 0, 'slider-pitch': 20, 'slider-shoulder-l': -15, 'slider-shoulder-r': -15, 'slider-pincer-l': 0, 'slider-pincer-r': 0 }});
-        setEyeExpression('alert');
+        setEyeExpression('alert', false);
+      }}
+
+      if (echoToWs && isLiveSync && ws && ws.readyState === WebSocket.OPEN) {{
+        ws.send(JSON.stringify({{ gesture: name }}));
       }}
     }}
 
@@ -785,7 +944,7 @@ html_content = f"""<!DOCTYPE html>
       for (const [id, val] of Object.entries(vals)) {{
         document.getElementById(id).value = val;
       }}
-      updateJoints();
+      updateJoints(false);
     }}
 
     let isExploded = false;
@@ -810,6 +969,23 @@ html_content = f"""<!DOCTYPE html>
 
     function animate() {{
       requestAnimationFrame(animate);
+
+      if (isLiveSync && wheelDriveState) {{
+        const isFwd = (wheelDriveState[0] === 1 && wheelDriveState[2] === 1);
+        const isRev = (wheelDriveState[1] === 1 && wheelDriveState[3] === 1);
+        if (isFwd) {{
+          gridOffset = (gridOffset - 0.7) % 10.0;
+          grid.position.y = gridOffset;
+          leftWheel.rotation.x += 0.08;
+          rightWheel.rotation.x += 0.08;
+        }} else if (isRev) {{
+          gridOffset = (gridOffset + 0.9) % 10.0;
+          grid.position.y = gridOffset;
+          leftWheel.rotation.x -= 0.10;
+          rightWheel.rotation.x -= 0.10;
+        }}
+      }}
+
       renderer.render(scene, camera);
     }}
     animate();
