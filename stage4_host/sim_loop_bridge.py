@@ -89,20 +89,23 @@ class SimLoopBridge:
         rx = float(self.env.data.qpos[self.root_qpos_adr + 0])
         ry = float(self.env.data.qpos[self.root_qpos_adr + 1])
 
-        # Coffee Mug keep-out (>16cm clearance)
-        if self.mug_id != -1:
-            mx = float(self.env.data.xpos[self.mug_id, 0])
-            my = float(self.env.data.xpos[self.mug_id, 1])
-            d_mug = math.sqrt((rx - mx)**2 + (ry - my)**2)
-            if d_mug < 0.18:
-                action_10d[0] = -2.0
-                action_10d[1] = 4.0
+        # Autonomous Collision Avoidance Guard (Active ONLY when wheels are driving)
+        is_driving = (abs(action_10d[0]) > 0.05 or abs(action_10d[1]) > 0.05)
+        if is_driving:
+            # Coffee Mug keep-out (>16cm clearance)
+            if self.mug_id != -1:
+                mx = float(self.env.data.xpos[self.mug_id, 0])
+                my = float(self.env.data.xpos[self.mug_id, 1])
+                d_mug = math.sqrt((rx - mx)**2 + (ry - my)**2)
+                if d_mug < 0.18:
+                    action_10d[0] = -2.0
+                    action_10d[1] = 4.0
 
-        # Desk Boundary Margin (>10cm margin)
-        if abs(rx) > 0.36 or abs(ry) > 0.26:
-            heading_to_center = math.atan2(-ry, -rx)
-            action_10d[0] = 3.5 * math.cos(heading_to_center) + 1.5
-            action_10d[1] = 3.5 * math.sin(heading_to_center) - 1.5
+            # Desk Boundary Margin (>10cm margin)
+            if abs(rx) > 0.36 or abs(ry) > 0.26:
+                heading_to_center = math.atan2(-ry, -rx)
+                action_10d[0] = 3.5 * math.cos(heading_to_center) + 1.5
+                action_10d[1] = 3.5 * math.sin(heading_to_center) - 1.5
 
         self.obs, rew, term, trunc, info = self.env.step(action_10d)
         if term or trunc:

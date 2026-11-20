@@ -71,28 +71,33 @@ class Stage4HostServer:
 
         self.running = True
         self.connected_clients: Set[Any] = set()
-        # Default startup in active playful companion mode
-        self.active_mode = "Playful Desk Companion" if self.mode == "laptop" else "Body-Doubling Silent Presence"
+        # Default startup in Attentive Desk Companion mode (parked, wheels: 0.0, 0.0)
+        self.active_mode = "Attentive Desk Companion" if self.mode == "laptop" else "Body-Doubling Silent Presence"
         self.person_id = "Owner"
         self.bond_level = 82.0
-        self.last_speech_reply = "Companion active and patrolling desk."
+        self.last_speech_reply = "Attentive companion active and listening."
         self.last_input_text = "System Initialized"
         self.last_input_source = "SYSTEM"
         self.current_joints = {
             "neck_yaw": 0.0,
             "neck_pitch": 8.0,
-            "left_ear": 18.0,
-            "right_ear": 18.0,
-            "left_arm": 15.0,
-            "right_arm": 15.0,
+            "left_ear": 10.0,
+            "right_ear": 10.0,
+            "left_arm": 5.0,
+            "right_arm": 5.0,
             "left_pincer": 0.0,
             "right_pincer": 0.0
         }
-        self.wheel_vels = [3.5, 3.5] if self.mode == "laptop" else [0.0, 0.0]
+        self.wheel_vels = [0.0, 0.0]
         self.cliff_states = [False, False, False, False]
         self.crown_touched = False
         self.round_trip_ms = 12.5
         self.last_status_print_time = 0.0
+
+        # Timed Movement State Machine
+        self.timed_movement_cmd: Optional[str] = None
+        self.timed_movement_start: float = 0.0
+        self.timed_movement_duration: float = 0.0
 
     def _init_video_writer(self, target_path: str) -> None:
         target_dir = os.path.dirname(os.path.abspath(target_path))
@@ -125,6 +130,7 @@ class Stage4HostServer:
         if self.video_writer is not None:
             self.video_writer.release()
             self.video_writer = None
+        time.sleep(0.3)
 
         if self.raw_video_path and os.path.exists(self.raw_video_path) and self.record_path:
             try:
@@ -152,6 +158,19 @@ class Stage4HostServer:
                         os.remove(self.record_path)
                     os.rename(self.raw_video_path, self.record_path)
 
+    def _trigger_timed_movement(self, cmd: str, duration: float) -> None:
+        self.timed_movement_cmd = cmd
+        self.timed_movement_start = time.time()
+        self.timed_movement_duration = duration
+        if cmd == "roam":
+            self.wheel_vels = [3.5, 3.5]
+        elif cmd == "dance":
+            self.wheel_vels = [2.5, -2.5]
+        elif cmd == "fetch_pen":
+            self.wheel_vels = [3.0, 3.0]
+        elif cmd == "sleep_nest":
+            self.wheel_vels = [-2.0, -2.0]
+
     def _on_user_spoken_phrase(self, phrase: str) -> None:
         self._on_user_input_command(phrase, source="VOICE")
 
@@ -169,20 +188,43 @@ class Stage4HostServer:
             return
 
         text_lower = text.lower()
-        if "focus" in text_lower:
+        movement_trigger: Optional[tuple[str, float]] = None
+
+        if "stop" in text_lower or "stay" in text_lower or "halt" in text_lower:
+            self.timed_movement_cmd = None
+            self.wheel_vels = [0.0, 0.0]
+            self.active_mode = "Attentive Desk Companion"
+            cmd_override = "stop"
+        elif "focus" in text_lower:
+            self.timed_movement_cmd = None
+            self.wheel_vels = [0.0, 0.0]
+            self.active_mode = "Flow-State Stealth Sentinel"
             cmd_override = "focus mode"
-        elif "fetch" in text_lower or "pen" in text_lower or "stylus" in text_lower:
-            cmd_override = "fetch pen"
-        elif "sleep" in text_lower or "nest" in text_lower:
-            cmd_override = "sleep nest"
-        elif "dance" in text_lower or "play" in text_lower or "hello" in text_lower:
+        elif "roam" in text_lower or "patrol" in text_lower:
+            self.active_mode = "Autonomous Desk Patrol"
+            movement_trigger = ("roam", 8.0)
+            cmd_override = "roam"
+        elif "dance" in text_lower or "hello" in text_lower or "hi" in text_lower or "play" in text_lower:
+            self.active_mode = "Playful Banter Routine"
+            movement_trigger = ("dance", 4.0)
             cmd_override = "dance"
+        elif "fetch" in text_lower or "pen" in text_lower or "stylus" in text_lower:
+            self.active_mode = "Task Assistance (Stylus Fetch)"
+            movement_trigger = ("fetch_pen", 4.0)
+            cmd_override = "fetch pen"
+        elif "sleep" in text_lower or "nest" in text_lower or "dock" in text_lower:
+            self.active_mode = "Circadian Night Wind-Down"
+            movement_trigger = ("sleep_nest", 3.5)
+            cmd_override = "sleep nest"
         else:
             cmd_override = text_lower
 
         cliff_sim = [0.06 if c else 0.02 for c in self.cliff_states]
         brain_out = self.brain.step(cliff_sim, self.crown_touched, [0, 0, 9.81], {"command": cmd_override}, self.rl_model)
         self._apply_brain_output(brain_out)
+
+        if movement_trigger is not None:
+            self._trigger_timed_movement(movement_trigger[0], movement_trigger[1])
 
         mood = brain_out.get("human_mood", "Focused")
         reply = self.brain.chat_engine.generate_reply(text, self.active_mode, self.bond_level, mood, self.person_id)
@@ -198,17 +240,18 @@ class Stage4HostServer:
             self.current_joints[k] = v
 
         if brain_out.get("action_intent") == "EMERGENCY_REVERSE":
+            self.timed_movement_cmd = None
             self.wheel_vels = [-6.0, -6.0]
+        elif self.timed_movement_cmd is not None:
+            pass
         elif brain_out.get("action_intent") == "PARK_BEHIND_LAPTOP":
             self.wheel_vels = [0.0, 0.0]
         elif brain_out.get("action_intent") == "DOCK_SLEEP_NEST":
-            self.wheel_vels = [2.0, 2.0]
+            self.wheel_vels = [0.0, 0.0]
         elif brain_out.get("action_intent") == "PURR_AND_WAVE":
             self.wheel_vels = [0.0, 0.0]
-        elif self.active_mode in ["Playful Desk Companion", "Playful Banter Routine"]:
-            self.wheel_vels = [3.5, 3.5]
         else:
-            self.wheel_vels = [3.0, 3.0]
+            self.wheel_vels = [0.0, 0.0]
 
     def _print_live_status(self) -> None:
         yaw = self.current_joints["neck_yaw"]
@@ -296,13 +339,13 @@ class Stage4HostServer:
     def run_laptop_hil_loop(self) -> None:
         console.print(Panel.fit(
             f"[bold #06B6D4]DESK PET: LAPTOP HARDWARE-IN-THE-LOOP (HIL) LIVE RUNTIME[/bold #06B6D4]\n"
-            f"[dim]Mode: LAPTOP | Port: {self.port} | Mic/Cam Active | 3D MuJoCo Virtual Physics\n"
-            f"Commands: Type in terminal (e.g. 'focus mode', 'fetch pen', 'hello', 'dance') or speak aloud.\n"
+            f"[dim]Mode: ATTENTIVE COMPANION (Parked: 0.0, 0.0) | Port: {self.port} | Mic/Cam Active\n"
+            f"Commands: 'roam' (8s), 'dance' (4s), 'fetch pen', 'sleep nest', 'stop' | Type or speak aloud.\n"
             f"Hotkeys: Press 'R' to toggle MP4 video recording | Press 'Q' or ESC to exit.[/dim]",
             border_style="#06B6D4"
         ))
 
-        self.audio.speak_async("Hello Abhisheik! Desk companion active and patrolling desk on your RTX 5050.")
+        self.audio.speak_async("Hello Abhisheik! Attentive desk companion active and parked on your RTX 5050.")
 
         last_step_t = time.time()
         last_smile_time = 0.0
@@ -327,23 +370,67 @@ class Stage4HostServer:
                     self.audio.speak_async("I see you smiling Abhisheik! Ready to code.")
                     self._print_live_status()
 
+            # Dynamic Timed Action Execution vs. Attentive Parked Idle
+            if self.timed_movement_cmd is not None:
+                elapsed = now - self.timed_movement_start
+                if elapsed >= self.timed_movement_duration:
+                    self.timed_movement_cmd = None
+                    self.wheel_vels = [0.0, 0.0]
+                    if self.active_mode not in ["Circadian Night Wind-Down", "Flow-State Stealth Sentinel"]:
+                        self.active_mode = "Attentive Desk Companion"
+                    print(f"\n[ACTION COMPLETE]: Robot smoothly parked (Wheels: 0.0, 0.0) in {self.active_mode}.", flush=True)
+                    self._print_live_status()
+                else:
+                    if self.timed_movement_cmd == "roam":
+                        turn = 1.0 * math.sin(now * 1.2)
+                        self.wheel_vels = [3.2 + turn, 3.2 - turn]
+                        self.current_joints["left_ear"] = 14.0 + 4.0 * math.sin(now * 2.0)
+                        self.current_joints["right_ear"] = 14.0 - 4.0 * math.sin(now * 2.0)
+                    elif self.timed_movement_cmd == "dance":
+                        dance_t = math.sin(now * 5.0)
+                        self.wheel_vels = [2.5 * dance_t, -2.5 * dance_t]
+                        self.current_joints["left_arm"] = 65.0 + 50.0 * math.sin(now * 6.0)
+                        self.current_joints["right_arm"] = 65.0 - 50.0 * math.sin(now * 6.0)
+                        self.current_joints["left_ear"] = 35.0
+                        self.current_joints["right_ear"] = 35.0
+                        self.current_joints["neck_yaw"] = 15.0 * dance_t
+                    elif self.timed_movement_cmd == "fetch_pen":
+                        if elapsed < 2.5:
+                            self.wheel_vels = [3.0, 3.0]
+                            self.current_joints["neck_pitch"] = -18.0
+                            self.current_joints["left_pincer"] = 25.0
+                            self.current_joints["right_pincer"] = 25.0
+                        else:
+                            self.wheel_vels = [0.0, 0.0]
+                            self.current_joints["neck_pitch"] = 8.0
+                            self.current_joints["left_pincer"] = 10.0
+                            self.current_joints["right_pincer"] = 10.0
+                    elif self.timed_movement_cmd == "sleep_nest":
+                        self.wheel_vels = [-2.0, -2.0]
+                        self.current_joints["neck_pitch"] = -15.0
+                        self.current_joints["left_ear"] = -25.0
+                        self.current_joints["right_ear"] = -25.0
+            else:
+                # ATTENTIVE IDLE (PARKED, WHEELS STRICTLY 0.0, 0.0)
+                self.wheel_vels = [0.0, 0.0]
                 if vis_info["face_detected"]:
                     target_yaw = float(np.clip(-vis_info["gaze_offset_x"] * 28.0, -45.0, 45.0))
                     target_pitch = float(np.clip(-vis_info["gaze_offset_y"] * 18.0 + 8.0, -15.0, 25.0))
                     self.current_joints["neck_yaw"] = 0.85 * self.current_joints["neck_yaw"] + 0.15 * target_yaw
                     self.current_joints["neck_pitch"] = 0.85 * self.current_joints["neck_pitch"] + 0.15 * target_pitch
+                else:
+                    self.current_joints["neck_yaw"] = 3.5 * math.sin(now * 0.4)
+                    self.current_joints["neck_pitch"] = 8.0 + 1.5 * math.cos(now * 0.3)
 
-            # Active cruising in Playful Companion mode
-            if self.active_mode in ["Playful Desk Companion", "Playful Banter Routine"]:
-                turn = 1.2 * math.sin(now * 0.75)
-                self.wheel_vels = [3.5 + turn, 3.5 - turn]
-                if not vis_info["face_detected"]:
-                    self.current_joints["neck_yaw"] = 12.0 * math.sin(now * 0.5)
-                    self.current_joints["neck_pitch"] = 8.0 + 4.0 * math.cos(now * 0.6)
-                    self.current_joints["left_ear"] = 18.0 + 6.0 * math.sin(now * 1.1)
-                    self.current_joints["right_ear"] = 18.0 - 6.0 * math.sin(now * 1.1)
-                    self.current_joints["left_arm"] = 15.0 + 8.0 * math.sin(now * 0.9)
-                    self.current_joints["right_arm"] = 15.0 - 8.0 * math.sin(now * 0.9)
+                # Gentle ear micro-twitches (±4°)
+                self.current_joints["left_ear"] = 10.0 + 4.0 * math.sin(now * 1.5)
+                self.current_joints["right_ear"] = 10.0 + 4.0 * math.cos(now * 1.5)
+
+                if self.active_mode not in ["Playful Banter Routine", "Task Assistance (Stylus Fetch)"]:
+                    self.current_joints["left_arm"] = 5.0
+                    self.current_joints["right_arm"] = 5.0
+                    self.current_joints["left_pincer"] = 0.0
+                    self.current_joints["right_pincer"] = 0.0
 
             render_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
             if self.sim_bridge is not None:
@@ -412,7 +499,7 @@ class Stage4HostServer:
                 pin_r = self.current_joints["right_pincer"]
                 joints_str = f"8-DOF JOINTS: Yaw:{yaw_val:+04.1f} Pitch:{pitch_val:+04.1f} | Ears:({ear_l:.0f}, {ear_r:.0f}) | Arms:({arm_l:.0f}, {arm_r:.0f}) | Pincers:({pin_l:.0f}, {pin_r:.0f}) | Wheels:({self.wheel_vels[0]:+.1f}, {self.wheel_vels[1]:+.1f})"
                 cv2.putText(composite, joints_str, (20, 610), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (200, 200, 200), 1)
-                cv2.putText(composite, "Press 'R' to toggle MP4 Recording | Press 'Q'/ESC to exit | Type in PowerShell anytime", (20, 630), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (120, 120, 120), 1)
+                cv2.putText(composite, "Commands: 'roam' (8s), 'dance' (4s), 'fetch pen', 'sleep nest', 'stop' | 'R': Record | 'Q': Exit", (20, 630), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (120, 120, 120), 1)
 
                 if self.is_recording and self.video_writer is not None:
                     self.video_writer.write(composite)
