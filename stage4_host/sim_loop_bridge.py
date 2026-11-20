@@ -6,22 +6,30 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import mujoco
+try:
+    import mujoco.viewer
+except Exception:
+    pass
 import numpy as np
+
+import warnings
+warnings.filterwarnings("ignore", message=".*WGL: Failed to make context current.*")
+warnings.filterwarnings("ignore", category=UserWarning)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from stage3_ai.desk_arena import StudyDeskArenaEnv
 
 class SimLoopBridge:
-    def __init__(self, render_mode: str = "rgb_array") -> None:
-        self.env = StudyDeskArenaEnv(render_mode=render_mode, curriculum_phase=2)
+    def __init__(self, render_mode: Optional[str] = None, launch_native_viewer: bool = False) -> None:
+        self.env = StudyDeskArenaEnv(render_mode=None, curriculum_phase=2)
         self.obs, _ = self.env.reset()
         self.renderer = mujoco.Renderer(self.env.model, height=480, width=640)
         self.cam = mujoco.MjvCamera()
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self.cam.lookat[:] = [0.0, 0.0, 0.05]
-        self.cam.distance = 0.95
+        self.cam.lookat[:] = [0.0, 0.0, 0.06]
+        self.cam.distance = 0.90
         self.cam.elevation = -22.0
-        self.cam.azimuth = 60.0
+        self.cam.azimuth = 65.0
 
         self.scene_option = mujoco.MjvOption()
         self.scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONVEXHULL] = False
@@ -33,13 +41,20 @@ class SimLoopBridge:
         self.root_qpos_adr = self.env.model.jnt_qposadr[self.root_jnt_id]
         self.root_dof_adr = self.env.model.jnt_dofadr[self.root_jnt_id]
 
+        self.passive_viewer = None
+        if launch_native_viewer and hasattr(mujoco, "viewer"):
+            try:
+                self.passive_viewer = mujoco.viewer.launch_passive(self.env.model, self.env.data)
+                print("[SIM] Native MuJoCo passive viewer launched.")
+            except Exception as e:
+                print(f"[SIM WARN] Native viewer launch fallback to OpenCV: {e}")
+                self.passive_viewer = None
+
     def step_action(self, action_10d: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any], np.ndarray]:
-        # Step environment physics
         self.obs, rew, term, trunc, info = self.env.step(action_10d)
         if term or trunc:
             self.obs, _ = self.env.reset()
 
-        # Enforce upright orientation guard
         qw = float(self.env.data.qpos[self.root_qpos_adr + 3])
         qz = float(self.env.data.qpos[self.root_qpos_adr + 6])
         norm = math.sqrt(qw * qw + qz * qz)
@@ -51,7 +66,15 @@ class SimLoopBridge:
         self.env.data.qpos[self.root_qpos_adr + 2] = 0.017
         mujoco.mj_forward(self.env.model, self.env.data)
 
-        # Render 3D frame
+        if self.passive_viewer is not None and self.passive_viewer.is_running():
+            self.passive_viewer.sync()
+
+        # Follow robot position with camera lookat
+        rx = float(self.env.data.qpos[self.root_qpos_adr + 0])
+        ry = float(self.env.data.qpos[self.root_qpos_adr + 1])
+        self.cam.lookat[0] = rx * 0.7
+        self.cam.lookat[1] = ry * 0.7
+
         self.renderer.update_scene(self.env.data, camera=self.cam, scene_option=self.scene_option)
         rgb = self.renderer.render()
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
@@ -59,4 +82,9 @@ class SimLoopBridge:
         return self.obs, info, bgr
 
     def close(self) -> None:
+        if self.passive_viewer is not None:
+            try:
+                self.passive_viewer.close()
+            except Exception:
+                pass
         self.env.close()
