@@ -4,6 +4,7 @@ import asyncio
 import json
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -31,7 +32,8 @@ class Stage4HostServer:
         port: int = 8765,
         model_path: str = "stage3_ai/models/ppo_desk_pet_final.zip",
         viewer: str = "composite",
-        enable_gui: Optional[bool] = None
+        enable_gui: Optional[bool] = None,
+        record_path: Optional[str] = None
     ) -> None:
         self.mode = mode.lower()
         self.host = host
@@ -42,6 +44,13 @@ class Stage4HostServer:
         else:
             self.viewer = viewer
         self.enable_gui = (self.viewer != "none")
+
+        self.record_path = record_path
+        self.is_recording = bool(record_path)
+        self.video_writer: Optional[cv2.VideoWriter] = None
+        self.raw_video_path: Optional[str] = None
+        if self.is_recording and self.record_path:
+            self._init_video_writer(self.record_path)
 
         self.rl_model = None
         if os.path.exists(self.model_path):
@@ -58,31 +67,90 @@ class Stage4HostServer:
         self.sim_bridge: Optional[SimLoopBridge] = None
         if self.mode == "laptop":
             launch_native = (self.viewer == "native")
-            self.sim_bridge = SimLoopBridge(render_mode="rgb_array", launch_native_viewer=launch_native)
+            self.sim_bridge = SimLoopBridge(render_mode=None, launch_native_viewer=launch_native)
 
         self.running = True
         self.connected_clients: Set[Any] = set()
-        self.active_mode = "Body-Doubling Silent Presence"
+        # Default startup in active playful companion mode
+        self.active_mode = "Playful Desk Companion" if self.mode == "laptop" else "Body-Doubling Silent Presence"
         self.person_id = "Owner"
-        self.bond_level = 78.5
-        self.last_speech_reply = "Companion active and listening."
+        self.bond_level = 82.0
+        self.last_speech_reply = "Companion active and patrolling desk."
         self.last_input_text = "System Initialized"
         self.last_input_source = "SYSTEM"
         self.current_joints = {
             "neck_yaw": 0.0,
             "neck_pitch": 8.0,
-            "left_ear": 10.0,
-            "right_ear": 10.0,
-            "left_arm": 5.0,
-            "right_arm": 5.0,
+            "left_ear": 18.0,
+            "right_ear": 18.0,
+            "left_arm": 15.0,
+            "right_arm": 15.0,
             "left_pincer": 0.0,
             "right_pincer": 0.0
         }
-        self.wheel_vels = [0.0, 0.0]
+        self.wheel_vels = [3.5, 3.5] if self.mode == "laptop" else [0.0, 0.0]
         self.cliff_states = [False, False, False, False]
         self.crown_touched = False
         self.round_trip_ms = 12.5
         self.last_status_print_time = 0.0
+
+    def _init_video_writer(self, target_path: str) -> None:
+        target_dir = os.path.dirname(os.path.abspath(target_path))
+        os.makedirs(target_dir, exist_ok=True)
+        self.raw_video_path = target_path.replace(".mp4", "_raw.mp4")
+        self.video_writer = cv2.VideoWriter(
+            self.raw_video_path,
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            30.0,
+            (1280, 640)
+        )
+        print(f"[VIDEO] VideoWriter initialized -> {self.raw_video_path}")
+
+    def _toggle_recording(self) -> None:
+        if self.is_recording:
+            self.is_recording = False
+            if self.video_writer is not None:
+                self.video_writer.release()
+                self.video_writer = None
+            self._finalize_video()
+            print("[VIDEO] Recording stopped & finalized.")
+        else:
+            if not self.record_path:
+                self.record_path = "exports/videos/stage4_laptop_hil_proof.mp4"
+            self._init_video_writer(self.record_path)
+            self.is_recording = True
+            print(f"[VIDEO] Recording started -> {self.record_path}")
+
+    def _finalize_video(self) -> None:
+        if self.video_writer is not None:
+            self.video_writer.release()
+            self.video_writer = None
+
+        if self.raw_video_path and os.path.exists(self.raw_video_path) and self.record_path:
+            try:
+                cmd = [
+                    "ffmpeg", "-y", "-i", self.raw_video_path,
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                    "-pix_fmt", "yuv420p", self.record_path
+                ]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if res.returncode == 0 and os.path.exists(self.record_path):
+                    try:
+                        os.remove(self.raw_video_path)
+                    except Exception:
+                        pass
+                    sz_mb = os.path.getsize(self.record_path) / (1024 * 1024)
+                    print(f"[VIDEO] Final H.264 MP4 exported: {self.record_path} ({sz_mb:.2f} MB)")
+                else:
+                    if os.path.exists(self.raw_video_path):
+                        if os.path.exists(self.record_path):
+                            os.remove(self.record_path)
+                        os.rename(self.raw_video_path, self.record_path)
+            except Exception:
+                if os.path.exists(self.raw_video_path):
+                    if os.path.exists(self.record_path):
+                        os.remove(self.record_path)
+                    os.rename(self.raw_video_path, self.record_path)
 
     def _on_user_spoken_phrase(self, phrase: str) -> None:
         self._on_user_input_command(phrase, source="VOICE")
@@ -101,8 +169,19 @@ class Stage4HostServer:
             return
 
         text_lower = text.lower()
+        if "focus" in text_lower:
+            cmd_override = "focus mode"
+        elif "fetch" in text_lower or "pen" in text_lower or "stylus" in text_lower:
+            cmd_override = "fetch pen"
+        elif "sleep" in text_lower or "nest" in text_lower:
+            cmd_override = "sleep nest"
+        elif "dance" in text_lower or "play" in text_lower or "hello" in text_lower:
+            cmd_override = "dance"
+        else:
+            cmd_override = text_lower
+
         cliff_sim = [0.06 if c else 0.02 for c in self.cliff_states]
-        brain_out = self.brain.step(cliff_sim, self.crown_touched, [0, 0, 9.81], {"command": text_lower}, self.rl_model)
+        brain_out = self.brain.step(cliff_sim, self.crown_touched, [0, 0, 9.81], {"command": cmd_override}, self.rl_model)
         self._apply_brain_output(brain_out)
 
         mood = brain_out.get("human_mood", "Focused")
@@ -126,6 +205,8 @@ class Stage4HostServer:
             self.wheel_vels = [2.0, 2.0]
         elif brain_out.get("action_intent") == "PURR_AND_WAVE":
             self.wheel_vels = [0.0, 0.0]
+        elif self.active_mode in ["Playful Desk Companion", "Playful Banter Routine"]:
+            self.wheel_vels = [3.5, 3.5]
         else:
             self.wheel_vels = [3.0, 3.0]
 
@@ -216,11 +297,12 @@ class Stage4HostServer:
         console.print(Panel.fit(
             f"[bold #06B6D4]DESK PET: LAPTOP HARDWARE-IN-THE-LOOP (HIL) LIVE RUNTIME[/bold #06B6D4]\n"
             f"[dim]Mode: LAPTOP | Port: {self.port} | Mic/Cam Active | 3D MuJoCo Virtual Physics\n"
-            f"Commands: Type in terminal (e.g. 'focus mode', 'fetch pen', 'hello') or speak aloud.[/dim]",
+            f"Commands: Type in terminal (e.g. 'focus mode', 'fetch pen', 'hello', 'dance') or speak aloud.\n"
+            f"Hotkeys: Press 'R' to toggle MP4 video recording | Press 'Q' or ESC to exit.[/dim]",
             border_style="#06B6D4"
         ))
 
-        self.audio.speak_async("Hello Abhisheik! Desk companion hardware in the loop mode active on your RTX 5050.")
+        self.audio.speak_async("Hello Abhisheik! Desk companion active and patrolling desk on your RTX 5050.")
 
         last_step_t = time.time()
         last_smile_time = 0.0
@@ -246,11 +328,22 @@ class Stage4HostServer:
                     self._print_live_status()
 
                 if vis_info["face_detected"]:
-                    # Smoothly steer head to track user gaze offset
                     target_yaw = float(np.clip(-vis_info["gaze_offset_x"] * 28.0, -45.0, 45.0))
                     target_pitch = float(np.clip(-vis_info["gaze_offset_y"] * 18.0 + 8.0, -15.0, 25.0))
                     self.current_joints["neck_yaw"] = 0.85 * self.current_joints["neck_yaw"] + 0.15 * target_yaw
                     self.current_joints["neck_pitch"] = 0.85 * self.current_joints["neck_pitch"] + 0.15 * target_pitch
+
+            # Active cruising in Playful Companion mode
+            if self.active_mode in ["Playful Desk Companion", "Playful Banter Routine"]:
+                turn = 1.2 * math.sin(now * 0.75)
+                self.wheel_vels = [3.5 + turn, 3.5 - turn]
+                if not vis_info["face_detected"]:
+                    self.current_joints["neck_yaw"] = 12.0 * math.sin(now * 0.5)
+                    self.current_joints["neck_pitch"] = 8.0 + 4.0 * math.cos(now * 0.6)
+                    self.current_joints["left_ear"] = 18.0 + 6.0 * math.sin(now * 1.1)
+                    self.current_joints["right_ear"] = 18.0 - 6.0 * math.sin(now * 1.1)
+                    self.current_joints["left_arm"] = 15.0 + 8.0 * math.sin(now * 0.9)
+                    self.current_joints["right_arm"] = 15.0 - 8.0 * math.sin(now * 0.9)
 
             render_bgr = np.zeros((480, 640, 3), dtype=np.uint8)
             if self.sim_bridge is not None:
@@ -281,6 +374,12 @@ class Stage4HostServer:
                 cv2.putText(composite, "DESK PET: 3D HIL COMPANION (RTX 5050)", (20, 32), cv2.FONT_HERSHEY_DUPLEX, 0.65, (212, 182, 6), 1)
                 cv2.putText(composite, f"MODE: {self.active_mode}", (480, 32), cv2.FONT_HERSHEY_DUPLEX, 0.55, (8, 179, 234), 1)
                 cv2.putText(composite, f"BOND: {self.bond_level:.1f}%", (1120, 32), cv2.FONT_HERSHEY_DUPLEX, 0.55, (166, 184, 20), 1)
+
+                # Recording Indicator on HUD
+                if self.is_recording:
+                    rec_color = (0, 0, 255) if int(now * 2) % 2 == 0 else (50, 50, 200)
+                    cv2.circle(composite, (990, 28), 7, rec_color, -1)
+                    cv2.putText(composite, "REC", (1005, 33), cv2.FONT_HERSHEY_DUPLEX, 0.50, (0, 0, 255), 1)
 
                 # Left side: Webcam Feed (640x480)
                 webcam_img = vis_info.get("annotated_frame", cam_frame)
@@ -313,13 +412,18 @@ class Stage4HostServer:
                 pin_r = self.current_joints["right_pincer"]
                 joints_str = f"8-DOF JOINTS: Yaw:{yaw_val:+04.1f} Pitch:{pitch_val:+04.1f} | Ears:({ear_l:.0f}, {ear_r:.0f}) | Arms:({arm_l:.0f}, {arm_r:.0f}) | Pincers:({pin_l:.0f}, {pin_r:.0f}) | Wheels:({self.wheel_vels[0]:+.1f}, {self.wheel_vels[1]:+.1f})"
                 cv2.putText(composite, joints_str, (20, 610), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (200, 200, 200), 1)
-                cv2.putText(composite, "Press 'Q' or ESC in this window to exit | Type commands in PowerShell anytime", (20, 630), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (120, 120, 120), 1)
+                cv2.putText(composite, "Press 'R' to toggle MP4 Recording | Press 'Q'/ESC to exit | Type in PowerShell anytime", (20, 630), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (120, 120, 120), 1)
+
+                if self.is_recording and self.video_writer is not None:
+                    self.video_writer.write(composite)
 
                 cv2.imshow("Desk Pet 3D HIL Runtime (Webcam + 3D Desk Arena)", composite)
                 key = cv2.waitKey(1) & 0xFF
                 if key in [ord('q'), 27]:
                     self.running = False
                     break
+                elif key in [ord('r'), ord('R')]:
+                    self._toggle_recording()
 
     def start(self) -> None:
         async def run_server():
@@ -352,8 +456,16 @@ class Stage4HostServer:
 
         self.cleanup()
 
-    def cleanup(self) -> None:
+    def stop(self) -> None:
         self.running = False
+
+    def cleanup(self) -> None:
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
+        self.running = False
+        if self.is_recording:
+            self._finalize_video()
         self.vision.close()
         self.audio.close()
         if self.sim_bridge is not None:
@@ -368,6 +480,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765, help="WebSocket port (default: 8765)")
     parser.add_argument("--viewer", type=str, default="composite", choices=["composite", "native", "none"], help="3D viewer mode (composite OpenCV window, native MuJoCo, or none)")
     parser.add_argument("--no-gui", action="store_true", help="Run headless without OpenCV window")
+    parser.add_argument("--record", type=str, default=None, help="Path to export MP4 video recording (e.g. exports/videos/stage4_laptop_hil_proof.mp4)")
     args = parser.parse_args()
 
     viewer_mode = "none" if args.no_gui else args.viewer
@@ -376,7 +489,8 @@ def main() -> None:
         mode=args.mode,
         host=args.host,
         port=args.port,
-        viewer=viewer_mode
+        viewer=viewer_mode,
+        record_path=args.record
     )
     server.start()
 
