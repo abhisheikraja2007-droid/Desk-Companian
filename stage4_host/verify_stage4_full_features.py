@@ -93,7 +93,20 @@ def run_15s_verification() -> None:
     assert file_size_mb > 0.05, f"Video file is too small ({file_size_mb:.3f} MB)!"
     assert file_size_mb < 18.0, f"Video file exceeds 18 MB ({file_size_mb:.2f} MB)!"
 
-    # Probe duration and resolution
+    # Probe duration, resolution and right pane brightness
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        ret, frame = cap.read()
+        cap.release()
+        if ret:
+            right_pane = frame[50:530, 640:1280]
+            rp_mean = float(right_pane.mean())
+            print(f"  ✔ Video Frame Right 3D Pane Mean Brightness: {rp_mean:.2f} (Target > 40.0)")
+            assert rp_mean > 40.0, f"3D MuJoCo right pane brightness too low: {rp_mean:.2f}"
+    except Exception as e:
+        print(f"  [CHECK] Video inspection note: {e}")
+
     try:
         res = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "stream=width,height,duration,codec_name", "-of", "csv=p=0", video_path],

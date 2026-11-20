@@ -23,13 +23,22 @@ class SimLoopBridge:
     def __init__(self, render_mode: Optional[str] = None, launch_native_viewer: bool = False) -> None:
         self.env = StudyDeskArenaEnv(render_mode=None, curriculum_phase=2)
         self.obs, _ = self.env.reset()
-        self.renderer = mujoco.Renderer(self.env.model, height=480, width=640)
+
+        # Boost ambient and diffuse headlight in the model for vivid rendering
+        self.env.model.vis.headlight.active = 2
+        self.env.model.vis.headlight.ambient[:] = [0.45, 0.45, 0.45]
+        self.env.model.vis.headlight.diffuse[:] = [0.85, 0.85, 0.85]
+        self.env.model.vis.headlight.specular[:] = [0.35, 0.35, 0.35]
+
+        # Lazy renderer to guarantee context binding to the rendering thread
+        self.renderer: Optional[mujoco.Renderer] = None
+
         self.cam = mujoco.MjvCamera()
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self.cam.lookat[:] = [0.0, 0.0, 0.06]
-        self.cam.distance = 0.90
+        self.cam.lookat[:] = [0.0, 0.0, 0.05]
+        self.cam.distance = 0.95
         self.cam.elevation = -22.0
-        self.cam.azimuth = 65.0
+        self.cam.azimuth = 60.0
 
         self.scene_option = mujoco.MjvOption()
         self.scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONVEXHULL] = False
@@ -41,6 +50,7 @@ class SimLoopBridge:
         self.root_qpos_adr = self.env.model.jnt_qposadr[self.root_jnt_id]
         self.root_dof_adr = self.env.model.jnt_dofadr[self.root_jnt_id]
 
+        self.base_body_id = mujoco.mj_name2id(self.env.model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
         self.mug_id = mujoco.mj_name2id(self.env.model, mujoco.mjtObj.mjOBJ_BODY, "coffee_mug")
         self.laptop_id = mujoco.mj_name2id(self.env.model, mujoco.mjtObj.mjOBJ_BODY, "laptop")
 
@@ -53,8 +63,29 @@ class SimLoopBridge:
                 print(f"[SIM WARN] Native viewer launch fallback to OpenCV: {e}")
                 self.passive_viewer = None
 
+    def _ensure_renderer(self) -> None:
+        if self.renderer is None:
+            self.renderer = mujoco.Renderer(self.env.model, height=480, width=640)
+
+    def render_frame(self) -> np.ndarray:
+        self._ensure_renderer()
+        assert self.renderer is not None
+
+        rx = float(self.env.data.qpos[self.root_qpos_adr + 0])
+        ry = float(self.env.data.qpos[self.root_qpos_adr + 1])
+        self.cam.lookat[0] = rx * 0.7
+        self.cam.lookat[1] = ry * 0.7
+        self.cam.lookat[2] = 0.05
+
+        self.renderer.update_scene(self.env.data, camera=self.cam, scene_option=self.scene_option)
+        rgb = self.renderer.render()
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+        mean_val = float(bgr.mean())
+        assert mean_val > 5.0, f"MuJoCo offscreen render returned black frame (mean={mean_val:.2f})!"
+        return bgr
+
     def step_action(self, action_10d: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any], np.ndarray]:
-        # Autonomous Collision Avoidance Guard for Patrol
         rx = float(self.env.data.qpos[self.root_qpos_adr + 0])
         ry = float(self.env.data.qpos[self.root_qpos_adr + 1])
 
@@ -77,7 +108,6 @@ class SimLoopBridge:
         if term or trunc:
             self.obs, _ = self.env.reset()
 
-        # Enforce upright attitude
         qw = float(self.env.data.qpos[self.root_qpos_adr + 3])
         qz = float(self.env.data.qpos[self.root_qpos_adr + 6])
         norm = math.sqrt(qw * qw + qz * qz)
@@ -92,15 +122,7 @@ class SimLoopBridge:
         if self.passive_viewer is not None and self.passive_viewer.is_running():
             self.passive_viewer.sync()
 
-        rx = float(self.env.data.qpos[self.root_qpos_adr + 0])
-        ry = float(self.env.data.qpos[self.root_qpos_adr + 1])
-        self.cam.lookat[0] = rx * 0.7
-        self.cam.lookat[1] = ry * 0.7
-
-        self.renderer.update_scene(self.env.data, camera=self.cam, scene_option=self.scene_option)
-        rgb = self.renderer.render()
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-
+        bgr = self.render_frame()
         return self.obs, info, bgr
 
     def close(self) -> None:
@@ -109,4 +131,10 @@ class SimLoopBridge:
                 self.passive_viewer.close()
             except Exception:
                 pass
+        if self.renderer is not None:
+            try:
+                self.renderer.close()
+            except Exception:
+                pass
+            self.renderer = None
         self.env.close()

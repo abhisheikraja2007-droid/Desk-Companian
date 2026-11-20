@@ -31,12 +31,12 @@ class AudioPipeline:
         self.candidate_dev_indices: List[int] = []
         self.native_samplerate = 44100
         self.channels = 1
-        self.gain_boost = 10.0
-        self.silence_threshold = 0.0035
+        self.gain_boost = 15.0
+        self.silence_threshold = 0.0008
         self.audio_buffer: List[np.ndarray] = []
         self.is_recording = False
         self.silence_blocks = 0
-        self.max_silence_blocks = 15
+        self.max_silence_blocks = 20
         self.last_mic_level_print = 0.0
         self.zero_rms_start: Optional[float] = None
         self.fallback_in_progress = False
@@ -89,7 +89,7 @@ class AudioPipeline:
         self.native_samplerate = int(dev_info.get("default_samplerate", 44100))
         self.channels = min(int(dev_info.get("max_input_channels", 1)), 2)
         blocksize = 1024
-        self.max_silence_blocks = int(0.65 * self.native_samplerate / blocksize)
+        self.max_silence_blocks = int(0.55 * self.native_samplerate / blocksize)
 
         # 1.0s Ambient Noise Floor Calibration
         try:
@@ -123,7 +123,7 @@ class AudioPipeline:
 
         self.selected_dev_idx = dev_idx
         boosted_noise = raw_noise_rms * self.gain_boost
-        self.silence_threshold = max(0.0005, float(boosted_noise * 2.5))
+        self.silence_threshold = max(0.0006, float(boosted_noise * 1.8))
 
         print(f"[AUDIO] Active Mic: [{dev_idx}] {dev_info.get('name')} @ {self.native_samplerate} Hz ({self.channels} ch)")
         print(f"[AUDIO] Noise Floor: raw_rms={raw_noise_rms:.6f}, boosted={boosted_noise:.6f} | Dynamic Trigger: {self.silence_threshold:.6f} | Pre-Amp: {self.gain_boost:.1f}x")
@@ -148,11 +148,16 @@ class AudioPipeline:
             else:
                 self.zero_rms_start = None
 
-            if rms > self.silence_threshold:
-                if now - self.last_mic_level_print > 1.5:
-                    bar = "█" * min(15, max(1, int(rms * 250)))
-                    print(f"\r[MIC] RMS={rms:.4f} (Listening...) |{bar:<15}| ", end="", flush=True)
+            # Live responsive VU meter
+            if rms > max(0.0002, self.silence_threshold * 0.4):
+                if now - self.last_mic_level_print > 0.25:
+                    bar_len = min(20, max(1, int(rms * 280)))
+                    meter_bar = "█" * bar_len
+                    status_lbl = "SPEECH" if rms > self.silence_threshold else "VOICE"
+                    print(f"\r[MIC] RMS={rms:.4f} ({status_lbl}) |{meter_bar:<20}| ", end="", flush=True)
                     self.last_mic_level_print = now
+
+            if rms > self.silence_threshold:
                 self.audio_buffer.append(mono_boosted)
                 self.is_recording = True
                 self.silence_blocks = 0
@@ -161,7 +166,7 @@ class AudioPipeline:
                 self.audio_buffer.append(mono_boosted)
                 if self.silence_blocks >= self.max_silence_blocks:
                     total_samples = sum(len(c) for c in self.audio_buffer)
-                    min_samples = int(0.35 * self.native_samplerate)
+                    min_samples = int(0.20 * self.native_samplerate)
                     if total_samples >= min_samples:
                         full_raw = np.concatenate(self.audio_buffer, axis=0)
                         np.clip(full_raw, -1.0, 1.0, out=full_raw)
