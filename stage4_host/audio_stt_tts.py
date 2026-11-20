@@ -31,7 +31,7 @@ class AudioPipeline:
         self.candidate_dev_indices: List[int] = []
         self.native_samplerate = 44100
         self.channels = 1
-        self.gain_boost = 15.0
+        self.gain_boost = 30.0
         self.silence_threshold = 0.0008
         self.audio_buffer: List[np.ndarray] = []
         self.is_recording = False
@@ -53,30 +53,51 @@ class AudioPipeline:
             print(f"[AUDIO WARN] Faster-Whisper initialization failed: {e}")
             self.whisper_model = None
 
+    def _select_working_mic(self) -> int:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        print("[AUDIO] Enumerating Host Audio Input Devices:")
+        self.candidate_dev_indices = []
+        for idx, dev in enumerate(devices):
+            if dev.get("max_input_channels", 0) > 0:
+                self.candidate_dev_indices.append(idx)
+                is_def = " [DEFAULT]" if idx == sd.default.device[0] else ""
+                print(f"  [{idx:2d}] {dev.get('name', 'Unknown')}{is_def} | {dev.get('max_input_channels')} ch | {dev.get('default_samplerate')} Hz")
+
+        preferred_order = [5, 1, 9, 10, 11, 4, 0]
+        probe_list = [i for i in preferred_order if i in self.candidate_dev_indices]
+        for i in self.candidate_dev_indices:
+            if i not in probe_list:
+                probe_list.append(i)
+
+        best_dev = probe_list[0] if probe_list else 0
+        best_rms = 0.0
+
+        print("[AUDIO] Probing input devices for live acoustic signal (threshold: raw_rms > 0.00005)...")
+        for dev_idx in probe_list:
+            try:
+                info = sd.query_devices(dev_idx)
+                sr = int(info.get("default_samplerate", 44100))
+                ch = min(int(info.get("max_input_channels", 1)), 2)
+                test_rec = sd.rec(int(0.35 * sr), samplerate=sr, channels=ch, device=dev_idx, dtype="float32")
+                sd.wait()
+                raw_rms = float(np.sqrt(np.mean(test_rec**2)))
+                print(f"  -> Probe Device [{dev_idx:2d}] {info.get('name', 'Unknown')}: raw_rms={raw_rms:.6f}")
+                if raw_rms > best_rms:
+                    best_rms = raw_rms
+                    best_dev = dev_idx
+                if raw_rms > 0.00005:
+                    print(f"[AUDIO] Live signal confirmed on Device [{dev_idx}] (raw_rms={raw_rms:.6f} > 0.00005) -> Selecting!")
+                    return dev_idx
+            except Exception:
+                continue
+
+        print(f"[AUDIO] Defaulting to best probed device: [{best_dev}] (raw_rms={best_rms:.6f})")
+        return best_dev
+
     def _init_microphone(self) -> None:
         try:
-            import sounddevice as sd
-            devices = sd.query_devices()
-            print("[AUDIO] Enumerating Host Audio Input Devices:")
-            self.candidate_dev_indices = []
-            for idx, dev in enumerate(devices):
-                if dev.get("max_input_channels", 0) > 0:
-                    self.candidate_dev_indices.append(idx)
-                    is_def = " [DEFAULT]" if idx == sd.default.device[0] else ""
-                    print(f"  [{idx:2d}] {dev.get('name', 'Unknown')}{is_def} | {dev.get('max_input_channels')} ch | {dev.get('default_samplerate')} Hz")
-
-            default_idx = sd.default.device[0]
-            if default_idx is not None and default_idx >= 0 and default_idx in self.candidate_dev_indices:
-                chosen_idx = default_idx
-            elif self.candidate_dev_indices:
-                chosen_idx = self.candidate_dev_indices[0]
-            else:
-                chosen_idx = None
-
-            if chosen_idx is None:
-                print("[AUDIO WARN] No audio input devices detected.")
-                return
-
+            chosen_idx = self._select_working_mic()
             self.selected_dev_idx = chosen_idx
             self._start_stream_on_device(chosen_idx)
         except Exception as e:
@@ -91,39 +112,17 @@ class AudioPipeline:
         blocksize = 1024
         self.max_silence_blocks = int(0.55 * self.native_samplerate / blocksize)
 
-        # 1.0s Ambient Noise Floor Calibration
+        # 0.8s Ambient Noise Floor Calibration
         try:
-            calib_rec = sd.rec(int(1.0 * self.native_samplerate), samplerate=self.native_samplerate, channels=self.channels, device=dev_idx, dtype="float32")
+            calib_rec = sd.rec(int(0.8 * self.native_samplerate), samplerate=self.native_samplerate, channels=self.channels, device=dev_idx, dtype="float32")
             sd.wait()
             raw_noise_rms = float(np.sqrt(np.mean(calib_rec**2)))
         except Exception:
             raw_noise_rms = 0.0001
 
-        # Fallback check if chosen device is completely flatline
-        if raw_noise_rms < 1e-7 and len(self.candidate_dev_indices) > 1:
-            for alt_idx in self.candidate_dev_indices:
-                if alt_idx == dev_idx:
-                    continue
-                try:
-                    alt_info = sd.query_devices(alt_idx)
-                    alt_sr = int(alt_info.get("default_samplerate", 44100))
-                    alt_ch = min(int(alt_info.get("max_input_channels", 1)), 2)
-                    alt_rec = sd.rec(int(0.4 * alt_sr), samplerate=alt_sr, channels=alt_ch, device=alt_idx, dtype="float32")
-                    sd.wait()
-                    alt_rms = float(np.sqrt(np.mean(alt_rec**2)))
-                    if alt_rms > 1e-7:
-                        dev_idx = alt_idx
-                        dev_info = alt_info
-                        self.native_samplerate = alt_sr
-                        self.channels = alt_ch
-                        raw_noise_rms = alt_rms
-                        break
-                except Exception:
-                    continue
-
         self.selected_dev_idx = dev_idx
         boosted_noise = raw_noise_rms * self.gain_boost
-        self.silence_threshold = max(0.0006, float(boosted_noise * 1.8))
+        self.silence_threshold = max(0.00035, float(boosted_noise * 1.4))
 
         print(f"[AUDIO] Active Mic: [{dev_idx}] {dev_info.get('name')} @ {self.native_samplerate} Hz ({self.channels} ch)")
         print(f"[AUDIO] Noise Floor: raw_rms={raw_noise_rms:.6f}, boosted={boosted_noise:.6f} | Dynamic Trigger: {self.silence_threshold:.6f} | Pre-Amp: {self.gain_boost:.1f}x")

@@ -170,6 +170,10 @@ class Stage4HostServer:
             self.wheel_vels = [3.0, 3.0]
         elif cmd == "sleep_nest":
             self.wheel_vels = [-2.0, -2.0]
+        elif cmd == "come_here":
+            self.wheel_vels = [3.5, 3.5]
+        elif cmd == "go_away":
+            self.wheel_vels = [-2.8, -2.8]
 
     def _on_user_spoken_phrase(self, phrase: str) -> None:
         self._on_user_input_command(phrase, source="VOICE")
@@ -200,11 +204,24 @@ class Stage4HostServer:
             self.wheel_vels = [0.0, 0.0]
             self.active_mode = "Flow-State Stealth Sentinel"
             cmd_override = "focus mode"
+        elif any(w in text_lower for w in ["come here", "come closer", "closer", "come over"]):
+            self.active_mode = "Attentive Approach"
+            movement_trigger = ("come_here", 2.5)
+            cmd_override = "come here"
+        elif any(w in text_lower for w in ["go away", "leave me", "give me space", "back off", "give space"]):
+            self.active_mode = "Circadian Night Wind-Down"
+            movement_trigger = ("go_away", 3.0)
+            cmd_override = "go away"
+        elif any(w in text_lower for w in ["sad", "tired", "stressed", "exhausted", "depressed", "rough day"]):
+            self.timed_movement_cmd = None
+            self.wheel_vels = [0.0, 0.0]
+            self.active_mode = "Empathetic Comfort Mode"
+            cmd_override = "im sad"
         elif "roam" in text_lower or "patrol" in text_lower:
             self.active_mode = "Autonomous Desk Patrol"
             movement_trigger = ("roam", 8.0)
             cmd_override = "roam"
-        elif "dance" in text_lower or "hello" in text_lower or "hi" in text_lower or "play" in text_lower:
+        elif "dance" in text_lower or "play" in text_lower:
             self.active_mode = "Playful Banter Routine"
             movement_trigger = ("dance", 4.0)
             cmd_override = "dance"
@@ -216,6 +233,8 @@ class Stage4HostServer:
             self.active_mode = "Circadian Night Wind-Down"
             movement_trigger = ("sleep_nest", 3.5)
             cmd_override = "sleep nest"
+        elif "hello" in text_lower or "hi" in text_lower or "hey" in text_lower:
+            cmd_override = "hello"
         else:
             cmd_override = text_lower
 
@@ -244,11 +263,7 @@ class Stage4HostServer:
             self.wheel_vels = [-6.0, -6.0]
         elif self.timed_movement_cmd is not None:
             pass
-        elif brain_out.get("action_intent") == "PARK_BEHIND_LAPTOP":
-            self.wheel_vels = [0.0, 0.0]
-        elif brain_out.get("action_intent") == "DOCK_SLEEP_NEST":
-            self.wheel_vels = [0.0, 0.0]
-        elif brain_out.get("action_intent") == "PURR_AND_WAVE":
+        elif brain_out.get("action_intent") in ["PARK_BEHIND_LAPTOP", "DOCK_SLEEP_NEST", "PURR_AND_WAVE", "EMPATHETIC_TILT"]:
             self.wheel_vels = [0.0, 0.0]
         else:
             self.wheel_vels = [0.0, 0.0]
@@ -376,12 +391,28 @@ class Stage4HostServer:
                 if elapsed >= self.timed_movement_duration:
                     self.timed_movement_cmd = None
                     self.wheel_vels = [0.0, 0.0]
-                    if self.active_mode not in ["Circadian Night Wind-Down", "Flow-State Stealth Sentinel"]:
+                    if self.active_mode not in ["Circadian Night Wind-Down", "Flow-State Stealth Sentinel", "Empathetic Comfort Mode"]:
                         self.active_mode = "Attentive Desk Companion"
                     print(f"\n[ACTION COMPLETE]: Robot smoothly parked (Wheels: 0.0, 0.0) in {self.active_mode}.", flush=True)
                     self._print_live_status()
                 else:
-                    if self.timed_movement_cmd == "roam":
+                    if self.timed_movement_cmd == "come_here":
+                        self.wheel_vels = [3.5, 3.5]
+                        self.current_joints["neck_yaw"] = 0.0
+                        self.current_joints["neck_pitch"] = 15.0
+                        self.current_joints["left_ear"] = 30.0
+                        self.current_joints["right_ear"] = 30.0
+                        self.current_joints["left_arm"] = 25.0
+                        self.current_joints["right_arm"] = 25.0
+                    elif self.timed_movement_cmd == "go_away":
+                        self.wheel_vels = [-2.8, -2.8]
+                        self.current_joints["neck_yaw"] = 0.0
+                        self.current_joints["neck_pitch"] = 12.0
+                        self.current_joints["left_ear"] = -25.0
+                        self.current_joints["right_ear"] = -25.0
+                        self.current_joints["left_arm"] = 0.0
+                        self.current_joints["right_arm"] = 0.0
+                    elif self.timed_movement_cmd == "roam":
                         turn = 1.0 * math.sin(now * 1.2)
                         self.wheel_vels = [3.2 + turn, 3.2 - turn]
                         self.current_joints["left_ear"] = 14.0 + 4.0 * math.sin(now * 2.0)
@@ -413,7 +444,12 @@ class Stage4HostServer:
             else:
                 # ATTENTIVE IDLE (PARKED, WHEELS STRICTLY 0.0, 0.0)
                 self.wheel_vels = [0.0, 0.0]
-                if vis_info["face_detected"]:
+                if self.active_mode == "Empathetic Comfort Mode":
+                    self.current_joints["neck_yaw"] = -8.0
+                    self.current_joints["neck_pitch"] = 12.0
+                    self.current_joints["left_ear"] = -12.0
+                    self.current_joints["right_ear"] = -12.0
+                elif vis_info["face_detected"]:
                     target_yaw = float(np.clip(-vis_info["gaze_offset_x"] * 28.0, -45.0, 45.0))
                     target_pitch = float(np.clip(-vis_info["gaze_offset_y"] * 18.0 + 8.0, -15.0, 25.0))
                     self.current_joints["neck_yaw"] = 0.85 * self.current_joints["neck_yaw"] + 0.15 * target_yaw
@@ -422,9 +458,10 @@ class Stage4HostServer:
                     self.current_joints["neck_yaw"] = 3.5 * math.sin(now * 0.4)
                     self.current_joints["neck_pitch"] = 8.0 + 1.5 * math.cos(now * 0.3)
 
-                # Gentle ear micro-twitches (±4°)
-                self.current_joints["left_ear"] = 10.0 + 4.0 * math.sin(now * 1.5)
-                self.current_joints["right_ear"] = 10.0 + 4.0 * math.cos(now * 1.5)
+                if self.active_mode != "Empathetic Comfort Mode":
+                    # Gentle ear micro-twitches (±4°)
+                    self.current_joints["left_ear"] = 10.0 + 4.0 * math.sin(now * 1.5)
+                    self.current_joints["right_ear"] = 10.0 + 4.0 * math.cos(now * 1.5)
 
                 if self.active_mode not in ["Playful Banter Routine", "Task Assistance (Stylus Fetch)"]:
                     self.current_joints["left_arm"] = 5.0
